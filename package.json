@@ -1,0 +1,54 @@
+{
+  "name": "aethene",
+  "version": "1.0.0",
+  "description": "Aethene - The AI Memory Layer API",
+  "homepage": "https://aethene.com",
+  "main": "dist/server.js",
+  "type": "module",
+  "overrides": {
+    "minimatch": "^10.2.1",
+    "glob": "^11.0.0"
+  },
+  "scripts": {
+    "server": "tsx src/server.ts",
+    "server:dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix"
+  },
+  "keywords": [
+    "ai-memory",
+    "memory-api",
+    "rag",
+    "vector-search",
+    "embeddings",
+    "semantic-search",
+    "llm-memory"
+  ],
+  "author": "Aethene Inc.",
+  "license": "Proprietary",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aethene/aethene-api"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^1.35.0",
+    "@google/generative-ai": "^0.24.1",
+    "@hono/node-server": "^1.19.6",
+    "convex": "^1.31.5",
+    "dotenv": "^17.2.3",
+    "hono": "^4.11.10",
+    "openai": "^6.15.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  }
+}
