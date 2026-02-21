@@ -40,7 +40,7 @@
     "@google/genai": "^1.35.0",
     "@google/generative-ai": "^0.24.1",
     "@hono/node-server": "^1.19.6",
-    "convex": "^1.31.5",
+    "convex": "^1.32.0",
     "dotenv": "^17.2.3",
     "hono": "^4.11.10",
     "openai": "^6.15.0",

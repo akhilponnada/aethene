@@ -434,6 +434,9 @@ const TEMPORARY_FACT_PATTERNS: RegExp[] = [
   /\bgoing\s+to\b/i,                          // "going to"
   /\bwill\s+be\b/i,                           // "will be"
   /\btemporarily\b/i,                         // "temporarily"
+  // Present-progressive verbs indicate TEMPORARY state
+  /\bis\s+(?:reading|working|watching|learning|studying|doing|making|building|writing|planning|preparing)\b/i,
+  /\bcurrently\s+(?:reading|working|watching|learning|studying|doing|making|building|writing|planning)\b/i,
 ];
 
 // ============================================================================
@@ -546,6 +549,91 @@ function getNextWeekday(referenceDate: Date, targetDay: number): Date {
 
   result.setDate(result.getDate() + daysToAdd);
   return result;
+}
+
+/**
+ * Extract a context date from text (e.g., from session headers or explicit timestamps)
+ * Returns the LATEST date found in the text, or null if none found
+ *
+ * Patterns recognized:
+ * - [Session X - 1:56 pm on 8 May, 2023]
+ * - "on January 15, 2023"
+ * - "8 May 2023"
+ * - "2023-05-08"
+ */
+function extractContextDate(text: string): Date | null {
+  const patterns = [
+    // [Session X - TIME on DAY MONTH, YEAR] or [Session X - TIME on DAY MONTH YEAR]
+    /\[Session\s+\d+\s*[-–]\s*[\d:]+\s*(?:am|pm)?\s*on\s+(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)[,\s]+(\d{4})\]/gi,
+    // "on DAY MONTH, YEAR" or "on DAY MONTH YEAR"
+    /on\s+(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)[,\s]+(\d{4})/gi,
+    // "MONTH DAY, YEAR"
+    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})[,\s]+(\d{4})/gi,
+    // "DAY MONTH YEAR" (no comma)
+    /(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/gi,
+    // ISO format YYYY-MM-DD
+    /(\d{4})-(\d{2})-(\d{2})/g,
+  ];
+
+  const monthMap: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+  };
+
+  let latestDate: Date | null = null;
+
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    for (const match of matches) {
+      let date: Date | null = null;
+
+      if (pattern.source.includes('Session')) {
+        // [Session X - TIME on DAY MONTH, YEAR]
+        const day = parseInt(match[1], 10);
+        const month = monthMap[match[2].toLowerCase()];
+        const year = parseInt(match[3], 10);
+        date = new Date(year, month, day);
+      } else if (pattern.source.startsWith('on')) {
+        // "on DAY MONTH, YEAR"
+        const day = parseInt(match[1], 10);
+        const month = monthMap[match[2].toLowerCase()];
+        const year = parseInt(match[3], 10);
+        date = new Date(year, month, day);
+      } else if (pattern.source.startsWith('\\(\\d{4}\\)')) {
+        // ISO format
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1;
+        const day = parseInt(match[3], 10);
+        date = new Date(year, month, day);
+      } else if (pattern.source.startsWith('\\(January')) {
+        // "MONTH DAY, YEAR"
+        const month = monthMap[match[1].toLowerCase()];
+        const day = parseInt(match[2], 10);
+        const year = parseInt(match[3], 10);
+        date = new Date(year, month, day);
+      } else {
+        // "DAY MONTH YEAR"
+        const day = parseInt(match[1], 10);
+        const month = monthMap[match[2].toLowerCase()];
+        const year = parseInt(match[3], 10);
+        date = new Date(year, month, day);
+      }
+
+      if (date && !isNaN(date.getTime())) {
+        // Use UTC date to avoid timezone issues
+        const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0));
+        if (!latestDate || utcDate > latestDate) {
+          latestDate = utcDate;
+        }
+      }
+    }
+  }
+
+  if (latestDate) {
+    console.log(`   📅 Extracted context date from text: ${latestDate.toISOString().split('T')[0]}`);
+  }
+
+  return latestDate;
 }
 
 /**
@@ -1044,6 +1132,17 @@ function parseMultiSpeakerContent(content: string): Map<string, string[]> {
 function determineMemoryKind(content: string): MemoryKind {
   const contentLower = content.toLowerCase();
 
+  // FIRST: Check for RECURRING dates - these are FACTS, not events
+  // Birthdays, anniversaries, etc. recur annually and are permanent biographical facts
+  const recurringDatePatterns = [
+    /\b(?:my\s+)?(?:birthday|anniversary|wedding\s+anniversary)\b/i,
+    /\bborn\s+on\b/i,
+    /\b(?:celebrates?|observes?)\s+(?:birthday|anniversary)\b/i,
+  ];
+  if (recurringDatePatterns.some(p => p.test(content))) {
+    return 'fact';  // NOT 'event' - recurring dates are permanent facts
+  }
+
   // Event indicators
   const eventIndicators = [
     'meeting', 'appointment', 'scheduled', 'event', 'deadline', 'due',
@@ -1472,9 +1571,11 @@ function classifyMemoryStatic(content: string): boolean {
     /\bknown\s+as\b/i.test(content) ||
     /\bgoes\s+by\b/i.test(content) ||
     /\bmy\s+name\b/i.test(content) ||
-    // BIRTH/AGE patterns - permanent facts
+    // BIRTH/AGE/ANNIVERSARY patterns - permanent facts (recurring dates)
     /\bborn\s+(?:on|in)\b/i.test(content) ||
     /\bbirthday\s+(?:is|on)\b/i.test(content) ||
+    /\banniversary\s+(?:is|on)\b/i.test(content) ||  // Wedding anniversary, etc.
+    /\bwedding\s+anniversary\b/i.test(content) ||
     /\bbirthdate\b/i.test(content) ||
     /\bdate\s+of\s+birth\b/i.test(content) ||
     /\b\d+\s+years?\s+old\b/i.test(content) ||
@@ -1582,16 +1683,20 @@ export async function extractMemories(
   //   "2 years ago" -> "2024-02-19"
   //   "next Friday" -> "2026-02-27"
   // ═══════════════════════════════════════════════════════════════════════════
-  const now = new Date();
-  const dateConvertedContent = convertRelativeDates(sanitizedContent, now);
+  // SMART DATE REFERENCE: Use context date from text if available (e.g., session timestamps)
+  // This allows relative dates like "yesterday" to be resolved relative to the conversation date
+  // rather than today's date, preserving historical accuracy
+  const contextDate = extractContextDate(sanitizedContent);
+  const referenceDate = contextDate || new Date();
+  const dateConvertedContent = convertRelativeDates(sanitizedContent, referenceDate);
 
   // Log conversion details for debugging
   if (dateConvertedContent !== sanitizedContent) {
-    console.log(`   📅 Date conversion applied. Reference date: ${now.toISOString()}`);
+    console.log(`   📅 Date conversion applied. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
     console.log(`   📅 Original: ${sanitizedContent.substring(0, 200)}...`);
     console.log(`   📅 Converted: ${dateConvertedContent.substring(0, 200)}...`);
   } else {
-    console.log(`   📅 No relative dates found to convert. Reference date: ${now.toISOString()}`);
+    console.log(`   📅 No relative dates found to convert. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1896,12 +2001,14 @@ function supplementWithRegex(
   // JOB TITLE EXTRACTION (Most commonly missed by LLM)
   // ═══════════════════════════════════════════════════════════════════════════
   const jobPatterns = [
-    // "I'm a data scientist" / "I am a software engineer"
-    /(?:i'm|i am|work as)\s+(?:a|an)\s+([a-z]+(?:\s+[a-z]+)?(?:\s+(?:engineer|scientist|developer|manager|designer|analyst|architect|consultant|director|lead|specialist|coordinator|administrator|assistant|executive|officer|writer|editor|artist|teacher|professor|nurse|doctor|lawyer|accountant|chef|nurse)))/gi,
-    // "I work as senior engineer"
-    /work(?:ing)?\s+as\s+(?:a|an)?\s*([a-z]+(?:\s+[a-z]+){0,2})/gi,
-    // "My role is data scientist"
-    /(?:my )?(?:role|job|position|title)\s+(?:is|as)\s+(?:a|an)?\s*([a-z]+(?:\s+[a-z]+){0,2})/gi,
+    // "I'm a data scientist" / "I am a software engineer" - captures 1-3 word job titles
+    /(?:i'm|i am)\s+(?:a|an)\s+((?:senior|junior|lead|chief|principal|staff)?\s*[a-z]+(?:\s+[a-z]+)?)/gi,
+    // "I work as a developer" / "work as senior engineer"
+    /work(?:ing)?\s+as\s+(?:a|an)?\s*((?:senior|junior|lead|chief|principal|staff)?\s*[a-z]+(?:\s+[a-z]+){0,2})/gi,
+    // "My role is data scientist" / "My job is engineer"
+    /(?:my\s+)?(?:role|job|position|title|profession|occupation)\s+(?:is|as)\s+(?:a|an)?\s*((?:senior|junior|lead|chief|principal|staff)?\s*[a-z]+(?:\s+[a-z]+){0,2})/gi,
+    // "Name works as a [title]" / "Name is working as [title]" (third-person)
+    /(\w+(?:\s+\w+)?)\s+(?:works?|is\s+working)\s+as\s+(?:a|an)?\s*([a-z]+(?:\s+[a-z]+){0,3})/gi,
   ];
 
   console.log('   🔍 Regex supplement: checking job patterns...');
@@ -2893,6 +3000,146 @@ export function convertDates(text: string, referenceDate?: Date): string {
 }
 
 // ============================================================================
+// CONTRADICTION SUPERSEDING (SEMANTIC SIMILARITY-BASED)
+// ============================================================================
+
+/**
+ * Patterns for extracting entity + attribute from memory content
+ * Used to detect semantic contradictions (same entity + same attribute = contradiction)
+ */
+const ENTITY_ATTRIBUTE_PATTERNS = [
+  // "X lives in Y" -> entity=X, attribute=location
+  { regex: /^(\w+(?:\s+\w+)?)\s+lives?\s+in\b/i, attribute: 'location' },
+  // "X works at Y" -> entity=X, attribute=workplace
+  { regex: /^(\w+(?:\s+\w+)?)\s+works?\s+(?:at|for)\b/i, attribute: 'workplace' },
+  // "X is a Y" (job) -> entity=X, attribute=job
+  { regex: /^(\w+(?:\s+\w+)?)\s+is\s+(?:a|an)\s+\w+(?:\s+\w+)?\s*$/i, attribute: 'job' },
+  // "X's favorite Y is Z" -> entity=X, attribute=favorite_Y
+  { regex: /^(\w+(?:'s)?)\s+favorite\s+(\w+)\s+is\b/i, attribute: (m: RegExpMatchArray) => `favorite_${m[2]}` },
+  // "User's location is Y" -> entity=User, attribute=location
+  { regex: /^(\w+(?:'s)?)\s+(?:location|address|residence)\s+is\b/i, attribute: 'location' },
+  // "User prefers Y" -> entity=User, attribute=preferences
+  { regex: /^(\w+)\s+prefers?\b/i, attribute: 'preference' },
+  // Generic "X is Y years old" -> entity=X, attribute=age
+  { regex: /^(\w+(?:\s+\w+)?)\s+is\s+\d+\s+years?\s+old/i, attribute: 'age' },
+];
+
+/**
+ * Extract entity and attribute from memory content for contradiction detection
+ */
+function extractEntityAttribute(content: string): { entity: string; attribute: string } | null {
+  for (const pattern of ENTITY_ATTRIBUTE_PATTERNS) {
+    const match = content.match(pattern.regex);
+    if (match) {
+      const entity = match[1].replace(/'s$/i, '').toLowerCase();
+      const attribute = typeof pattern.attribute === 'function'
+        ? pattern.attribute(match)
+        : pattern.attribute;
+      return { entity, attribute };
+    }
+  }
+  return null;
+}
+
+/**
+ * Check for semantic contradictions and supersede old memories
+ *
+ * This function:
+ * 1. Searches for semantically similar memories (similarity > 0.85)
+ * 2. Checks if they have the same entity + attribute (potential contradiction)
+ * 3. Marks old memory as is_latest=false
+ * 4. Creates a 'supersedes' relationship link
+ *
+ * @param userId - User ID
+ * @param newContent - New memory content
+ * @param embedding - Embedding vector for the new memory
+ * @param convex - Convex client
+ * @returns IDs of superseded memories (if any)
+ */
+async function checkAndSupersede(
+  userId: string,
+  newContent: string,
+  embedding: number[],
+  convex: any
+): Promise<string[]> {
+  const supersededIds: string[] = [];
+
+  try {
+    // Search for semantically similar memories
+    const similarMemories = await convex.query('vectorSearch:searchMemories' as any, {
+      userId,
+      embedding,
+      limit: 10,
+      threshold: 0.85,  // High similarity threshold for contradiction detection
+    });
+
+    if (!similarMemories || similarMemories.length === 0) {
+      return supersededIds;
+    }
+
+    // Extract entity+attribute from new memory
+    const newEntityAttr = extractEntityAttribute(newContent);
+    if (!newEntityAttr) {
+      // If we can't extract entity+attribute, skip contradiction detection
+      return supersededIds;
+    }
+
+    console.log(`   🔍 Checking contradictions for: entity="${newEntityAttr.entity}", attr="${newEntityAttr.attribute}"`);
+
+    for (const existingMem of similarMemories) {
+      // Skip if not marked as latest (already superseded)
+      if (existingMem.is_latest === false) {
+        continue;
+      }
+
+      // Check if content is different (not a duplicate)
+      if (existingMem.content === newContent) {
+        continue;
+      }
+
+      // Extract entity+attribute from existing memory
+      const existEntityAttr = extractEntityAttribute(existingMem.content);
+      if (!existEntityAttr) {
+        continue;
+      }
+
+      // Check if same entity and same attribute (contradiction)
+      if (existEntityAttr.entity === newEntityAttr.entity &&
+          existEntityAttr.attribute === newEntityAttr.attribute) {
+        console.log(`   ⚠️ CONTRADICTION found: "${existingMem.content.substring(0, 50)}..." -> superseding`);
+
+        // Mark old memory as not latest
+        try {
+          await convex.mutation('memories:patch' as any, {
+            id: existingMem._id,
+            patch: { is_latest: false },
+          });
+
+          supersededIds.push(existingMem._id);
+          console.log(`   ✓ Marked memory ${existingMem._id} as is_latest=false`);
+        } catch (patchError: any) {
+          // Fallback: try alternative mutation name
+          try {
+            await convex.mutation('memoryOps:updateMemoryLatest' as any, {
+              id: existingMem._id,
+              isLatest: false,
+            });
+            supersededIds.push(existingMem._id);
+            console.log(`   ✓ Marked memory ${existingMem._id} as is_latest=false (via memoryOps)`);
+          } catch (fallbackError: any) {
+            console.warn(`   ⚠️ Could not supersede memory: ${fallbackError.message}`);
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    console.warn(`   ⚠️ Contradiction check failed: ${error.message}`);
+  }
+
+  return supersededIds;
+}
+
+// ============================================================================
 // EXTRACT AND SAVE MEMORIES (COMBINED OPERATION)
 // ============================================================================
 
@@ -2957,6 +3204,15 @@ export async function extractAndSaveMemories(
     const isCore = forceIsCore !== undefined ? forceIsCore : mem.isStatic;
 
     try {
+      // Step 4a: Check for contradictions and supersede old memories
+      // This ensures that when a new fact contradicts an existing one,
+      // the old memory is marked as is_latest=false
+      const supersededIds = await checkAndSupersede(userId, mem.content, embedding, convex);
+      if (supersededIds.length > 0) {
+        console.log(`   📝 Superseded ${supersededIds.length} existing memory(ies)`);
+      }
+
+      // Step 4b: Save the new memory
       const id = await convex.mutation('memories:create' as any, {
         userId,
         content: mem.content,

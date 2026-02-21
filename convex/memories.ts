@@ -101,6 +101,17 @@ function detectContradiction(newContent: string, existingContent: string): strin
         if (isUpdate) {
           return newProp;
         }
+
+        // NEW FIX: For location and workplace, if the values differ, it's a contradiction
+        // even without "update" words (e.g., "lives in Boston" vs "lives in Seattle")
+        if (newProp === 'location' || newProp === 'workplace' || newProp === 'age') {
+          // Extract the differing values
+          const newValue = newNorm.split(/\s+/).slice(-1)[0];  // Last word
+          const existValue = existNorm.split(/\s+/).slice(-1)[0];
+          if (newValue !== existValue) {
+            return newProp;  // Same property, different value = contradiction
+          }
+        }
       }
     }
   }

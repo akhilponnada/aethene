@@ -34,8 +34,8 @@ search.post('/', async (c) => {
 
   const body = await validateBody(c, SearchSchema);
 
-  // Always use authUserId for search, containerTag is for filtering
-  const userId = authUserId;
+  // Use containerTag or userId from body (like Supermemory), fallback to auth userId
+  const userId = body.containerTag || body.userId || authUserId;
   const containerTag = body.containerTag;
 
   try {
