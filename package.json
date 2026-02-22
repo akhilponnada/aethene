@@ -36,10 +36,10 @@
     "llm-memory"
   ],
   "author": "Aethene Inc.",
-  "license": "Proprietary",
+  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aethene/aethene-api"
+    "url": "https://github.com/akhilponnada/aethene"
   },
   "engines": {
     "node": ">=18.0.0"
