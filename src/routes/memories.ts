@@ -138,6 +138,156 @@ memories.get('/', async (c) => {
 });
 
 // =============================================================================
+// GET /v1/memories/stats - Get memory statistics
+// IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
+// =============================================================================
+
+memories.get('/stats', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return authenticationError(c);
+  }
+
+  try {
+    const { queryConvex } = await import('../database/db.js');
+
+    const stats = await queryConvex<{
+      total: number;
+      core: number;
+      recent: number;
+      forgotten: number;
+      versioned: number;
+      active: number;
+    }>('memoryOps:getStats', { userId });
+
+    return c.json({
+      stats: stats || {
+        total: 0,
+        core: 0,
+        recent: 0,
+        forgotten: 0,
+        versioned: 0,
+        active: 0,
+      },
+    });
+  } catch (error) {
+    return internalError(c, error, 'Memory stats');
+  }
+});
+
+// =============================================================================
+// GET /v1/memories/expiring - Get memories expiring soon
+// IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
+// =============================================================================
+
+memories.get('/expiring', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return authenticationError(c);
+  }
+
+  const withinHours = parseInt(c.req.query('hours') || '24');
+  const limit = parseInt(c.req.query('limit') || '50');
+
+  try {
+    const { getConvexClient } = await import('../database/convex.js');
+    const convex = getConvexClient();
+
+    const expiring = await convex.query('memoryOps:getExpiringMemories' as any, {
+      userId,
+      withinHours: Math.min(Math.max(withinHours, 1), 168), // 1 hour to 1 week
+      limit: Math.min(limit, 100),
+    });
+
+    return c.json({
+      memories: expiring,
+      count: expiring.length,
+      withinHours,
+    });
+  } catch (error) {
+    return internalError(c, error, 'Get expiring memories');
+  }
+});
+
+// =============================================================================
+// GET /v1/memories/expiry-stats - Get expiration statistics
+// IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
+// =============================================================================
+
+memories.get('/expiry-stats', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return authenticationError(c);
+  }
+
+  try {
+    const { getConvexClient } = await import('../database/convex.js');
+    const convex = getConvexClient();
+
+    const stats = await convex.query('memoryOps:getExpiryStats' as any, {
+      userId,
+    });
+
+    return c.json({ stats });
+  } catch (error) {
+    return internalError(c, error, 'Get expiry stats');
+  }
+});
+
+// =============================================================================
+// GET /v1/memories/by-kind/:kind - Get memories by kind
+// IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
+// =============================================================================
+
+memories.get('/by-kind/:kind', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return authenticationError(c);
+  }
+
+  const kind = c.req.param('kind');
+  if (!['fact', 'preference', 'event'].includes(kind)) {
+    return c.json({
+      error: 'Invalid memory kind',
+      code: 'VALIDATION_ERROR',
+      validKinds: ['fact', 'preference', 'event'],
+    }, 400);
+  }
+
+  const limit = parseInt(c.req.query('limit') || '50');
+  const includeExpired = c.req.query('includeExpired') === 'true';
+
+  try {
+    const { getConvexClient } = await import('../database/convex.js');
+    const convex = getConvexClient();
+
+    const memories = await convex.query('memoryOps:getByKind' as any, {
+      userId,
+      kind,
+      limit: Math.min(limit, 100),
+      includeExpired,
+    });
+
+    const results = (memories as any[]).map((m: any) => ({
+      id: m._id,
+      content: m.content,
+      kind: m.memory_kind,
+      isCore: m.is_core,
+      expiresAt: m.expires_at ? new Date(m.expires_at).toISOString() : null,
+      createdAt: new Date(m.created_at).toISOString(),
+    }));
+
+    return c.json({
+      kind,
+      memories: results,
+      count: results.length,
+    });
+  } catch (error) {
+    return internalError(c, error, 'Get memories by kind');
+  }
+});
+
+// =============================================================================
 // GET /v1/memories/:id - Get specific memory
 // =============================================================================
 
@@ -277,43 +427,6 @@ memories.delete('/:id', async (c) => {
     });
   } catch (error) {
     return internalError(c, error, 'Memory delete');
-  }
-});
-
-// =============================================================================
-// GET /v1/memories/stats - Get memory statistics
-// =============================================================================
-
-memories.get('/stats', async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
-
-  try {
-    const { queryConvex } = await import('../database/db.js');
-
-    const stats = await queryConvex<{
-      total: number;
-      core: number;
-      recent: number;
-      forgotten: number;
-      versioned: number;
-      active: number;
-    }>('memoryOps:getStats', { userId });
-
-    return c.json({
-      stats: stats || {
-        total: 0,
-        core: 0,
-        recent: 0,
-        forgotten: 0,
-        versioned: 0,
-        active: 0,
-      },
-    });
-  } catch (error) {
-    return internalError(c, error, 'Memory stats');
   }
 });
 
@@ -480,115 +593,6 @@ memories.post('/bulk/forget', async (c) => {
     });
   } catch (error) {
     return internalError(c, error, 'Memories batch forget');
-  }
-});
-
-// =============================================================================
-// GET /v1/memories/expiring - Get memories expiring soon
-// =============================================================================
-
-memories.get('/expiring', async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
-
-  const withinHours = parseInt(c.req.query('hours') || '24');
-  const limit = parseInt(c.req.query('limit') || '50');
-
-  try {
-    const { getConvexClient } = await import('../database/convex.js');
-    const convex = getConvexClient();
-
-    const expiring = await convex.query('memoryOps:getExpiringMemories' as any, {
-      userId,
-      withinHours: Math.min(Math.max(withinHours, 1), 168), // 1 hour to 1 week
-      limit: Math.min(limit, 100),
-    });
-
-    return c.json({
-      memories: expiring,
-      count: expiring.length,
-      withinHours,
-    });
-  } catch (error) {
-    return internalError(c, error, 'Get expiring memories');
-  }
-});
-
-// =============================================================================
-// GET /v1/memories/by-kind/:kind - Get memories by kind
-// =============================================================================
-
-memories.get('/by-kind/:kind', async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
-
-  const kind = c.req.param('kind');
-  if (!['fact', 'preference', 'event'].includes(kind)) {
-    return c.json({
-      error: 'Invalid memory kind',
-      code: 'VALIDATION_ERROR',
-      validKinds: ['fact', 'preference', 'event'],
-    }, 400);
-  }
-
-  const limit = parseInt(c.req.query('limit') || '50');
-  const includeExpired = c.req.query('includeExpired') === 'true';
-
-  try {
-    const { getConvexClient } = await import('../database/convex.js');
-    const convex = getConvexClient();
-
-    const memories = await convex.query('memoryOps:getByKind' as any, {
-      userId,
-      kind,
-      limit: Math.min(limit, 100),
-      includeExpired,
-    });
-
-    const results = (memories as any[]).map((m: any) => ({
-      id: m._id,
-      content: m.content,
-      kind: m.memory_kind,
-      isCore: m.is_core,
-      expiresAt: m.expires_at ? new Date(m.expires_at).toISOString() : null,
-      createdAt: new Date(m.created_at).toISOString(),
-    }));
-
-    return c.json({
-      kind,
-      memories: results,
-      count: results.length,
-    });
-  } catch (error) {
-    return internalError(c, error, 'Get memories by kind');
-  }
-});
-
-// =============================================================================
-// GET /v1/memories/expiry-stats - Get expiration statistics
-// =============================================================================
-
-memories.get('/expiry-stats', async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
-
-  try {
-    const { getConvexClient } = await import('../database/convex.js');
-    const convex = getConvexClient();
-
-    const stats = await convex.query('memoryOps:getExpiryStats' as any, {
-      userId,
-    });
-
-    return c.json({ stats });
-  } catch (error) {
-    return internalError(c, error, 'Get expiry stats');
   }
 });
 

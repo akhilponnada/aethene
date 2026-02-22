@@ -478,44 +478,8 @@ documents.patch('/:id', async (c) => {
 });
 
 // =============================================================================
-// DELETE /v3/documents/:id - Delete document
-// =============================================================================
-
-documents.delete('/:id', async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
-
-  const docId = c.req.param('id');
-
-  try {
-    const { deleteDocument } = await import('../services/document-operations.js');
-
-    await deleteDocument(userId, docId);
-
-    // Supermemory v3 response format
-    return c.json({
-      success: true,
-      message: 'Document deleted',
-      id: docId,
-    });
-  } catch (error: any) {
-    if (error.message === 'Document not found') {
-      return notFoundError(c, 'Document');
-    }
-    if (error.message.includes('Access denied')) {
-      return c.json({
-        error: 'Access denied',
-        code: 'AUTHORIZATION_ERROR',
-      }, 403);
-    }
-    return internalError(c, error, 'document delete');
-  }
-});
-
-// =============================================================================
 // DELETE /v3/documents/bulk - Bulk delete documents
+// IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
 // =============================================================================
 
 documents.delete('/bulk', async (c) => {
@@ -552,6 +516,43 @@ documents.delete('/bulk', async (c) => {
       return validationError(c, error.message);
     }
     return internalError(c, error, 'documents bulk delete');
+  }
+});
+
+// =============================================================================
+// DELETE /v3/documents/:id - Delete document
+// =============================================================================
+
+documents.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return authenticationError(c);
+  }
+
+  const docId = c.req.param('id');
+
+  try {
+    const { deleteDocument } = await import('../services/document-operations.js');
+
+    await deleteDocument(userId, docId);
+
+    // Supermemory v3 response format
+    return c.json({
+      success: true,
+      message: 'Document deleted',
+      id: docId,
+    });
+  } catch (error: any) {
+    if (error.message === 'Document not found') {
+      return notFoundError(c, 'Document');
+    }
+    if (error.message.includes('Access denied')) {
+      return c.json({
+        error: 'Access denied',
+        code: 'AUTHORIZATION_ERROR',
+      }, 403);
+    }
+    return internalError(c, error, 'document delete');
   }
 });
 
