@@ -225,6 +225,8 @@ entities.get('/:id', async (c) => {
 const BuildGraphSchema = z.object({
   memoryIds: z.array(z.string()).optional(),
   rebuildAll: z.boolean().optional(),
+  limit: z.number().min(1).max(100).optional(), // Limit for rebuildAll to prevent timeout
+  async: z.boolean().optional(), // Run in background
 });
 
 entities.post('/build', async (c) => {
@@ -252,10 +254,11 @@ entities.post('/build', async (c) => {
       );
       memories = results.filter((m): m is { id: string; content: string } => m !== null);
     } else if (body.rebuildAll) {
-      // Get all memories for user
+      // Get memories for user with limit to prevent timeout
+      const limit = body.limit || 50; // Default to 50 to prevent timeout
       const allMemories = await convex.query('memories:getByUser' as any, {
         userId,
-        limit: 1000,
+        limit,
       });
       memories = (allMemories as any[]).map((m: any) => ({
         id: m._id,
@@ -265,7 +268,29 @@ entities.post('/build', async (c) => {
       return c.json({ error: 'Must provide memoryIds or set rebuildAll: true' }, 400);
     }
 
-    // Build graphs
+    // If async mode, process in background and return immediately
+    if (body.async) {
+      const jobId = `build-${Date.now()}`;
+
+      // Process in background (fire and forget)
+      buildGraphForMemories(memories, userId)
+        .then(result => {
+          console.log(`[EntityGraph] Job ${jobId} complete: ${result.totalEntities} entities, ${result.totalRelationships} relationships`);
+        })
+        .catch(err => {
+          console.error(`[EntityGraph] Job ${jobId} failed:`, err);
+        });
+
+      return c.json({
+        success: true,
+        async: true,
+        jobId,
+        memoriesQueued: memories.length,
+        message: 'Graph building started in background',
+      }, 202);
+    }
+
+    // Sync mode - wait for completion
     const result = await buildGraphForMemories(memories, userId);
 
     return c.json({
