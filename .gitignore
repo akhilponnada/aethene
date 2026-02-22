@@ -42,3 +42,5 @@ temp/
 # OS files
 Thumbs.db
 external-repos/
+reverse-engineering/
+supermemory*.md
