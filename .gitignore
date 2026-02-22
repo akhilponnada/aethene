@@ -56,3 +56,4 @@ tests/latency-*.ts
 tests/longmemeval-*.ts
 tests/deep-*.ts
 tests/full-*.ts
+documentation.md
