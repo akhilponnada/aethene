@@ -3309,6 +3309,27 @@ export async function extractAndSaveMemories(
           isCore,
         });
         console.log(`   💾 Saved memory: "${mem.content.substring(0, 50)}..." (${isCore ? 'core' : 'dynamic'})`);
+
+        // Step 4c: Build entity graph for this memory (async, non-blocking)
+        try {
+          const { buildGraphForMemory } = await import('./graph-builder.js');
+          buildGraphForMemory({
+            userId,
+            memoryId: id as string,
+            memoryContent: mem.content,
+            containerTags,
+            useLLM: true,
+          }).then(graphResult => {
+            if (graphResult.entities > 0) {
+              console.log(`   🔗 Graph: ${graphResult.entities} entities, ${graphResult.relationships} relationships`);
+            }
+          }).catch(err => {
+            console.warn(`   ⚠️ Graph build warning: ${err.message}`);
+          });
+        } catch (graphError: any) {
+          // Non-blocking - don't fail memory save if graph fails
+          console.warn(`   ⚠️ Graph import warning: ${graphError.message}`);
+        }
       }
     } catch (error: any) {
       console.warn(`   ⚠️ Failed to save memory: ${error.message}`);

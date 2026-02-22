@@ -12,6 +12,7 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as chunks from "../chunks.js";
 import type * as content from "../content.js";
 import type * as crons from "../crons.js";
+import type * as entities from "../entities.js";
 import type * as memories from "../memories.js";
 import type * as memoryLinks from "../memoryLinks.js";
 import type * as memoryOps from "../memoryOps.js";
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   chunks: typeof chunks;
   content: typeof content;
   crons: typeof crons;
+  entities: typeof entities;
   memories: typeof memories;
   memoryLinks: typeof memoryLinks;
   memoryOps: typeof memoryOps;

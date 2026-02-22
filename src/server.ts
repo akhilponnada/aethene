@@ -34,6 +34,7 @@ import relationsRoutes from './routes/relations.js';
 import documentsRoutes from './routes/documents.js';   // Document operations
 import settingsRoutes from './routes/settings.js';      // User settings
 import authRoutes from './routes/auth.js';              // API key management
+import entitiesRoutes from './routes/entities.js';      // Entity graph routes
 
 // =============================================================================
 // INITIALIZE
@@ -187,6 +188,9 @@ app.route('/v1', relationsRoutes);
 
 // API key management
 app.route('/v1/auth', authRoutes);
+
+// Entity graph (Supermemory-compatible semantic graph)
+app.route('/v1/entities', entitiesRoutes);
 
 // =============================================================================
 // 404 HANDLER

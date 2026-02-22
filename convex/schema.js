@@ -93,13 +93,58 @@ export default defineSchema({
     memory_links: defineTable({
         from_memory: v.id("memories"),
         to_memory: v.id("memories"),
-        link_type: v.string(), // "supersedes" | "enriches" | "inferred"
+        link_type: v.string(), // "supersedes" | "enriches" | "inferred" | "relates_to"
         confidence: v.float64(),
         created_at: v.float64(),
     })
         .index("by_from", ["from_memory"])
         .index("by_to", ["to_memory"])
         .index("by_type", ["link_type"]),
+    // ============================================================================
+    // ENTITIES - Graph Memory nodes (people, orgs, locations, etc.)
+    // ============================================================================
+    entities: defineTable({
+        user_id: v.string(),
+        name: v.string(), // Entity name (e.g., "John Smith", "Google", "San Francisco")
+        normalized_name: v.string(), // Lowercase for matching
+        entity_type: v.string(), // "person" | "organization" | "location" | "date" | "concept" | "other"
+        attributes: v.optional(v.any()), // Additional attributes about the entity
+        mention_count: v.float64(), // How often this entity appears
+        container_tags: v.optional(v.array(v.string())),
+        created_at: v.float64(),
+        updated_at: v.float64(),
+    })
+        .index("by_user", ["user_id"])
+        .index("by_user_name", ["user_id", "normalized_name"])
+        .index("by_user_type", ["user_id", "entity_type"])
+        .index("by_user_container", ["user_id", "container_tags"]),
+    // ============================================================================
+    // ENTITY LINKS - Relationships between entities (semantic graph)
+    // ============================================================================
+    entity_links: defineTable({
+        user_id: v.string(),
+        from_entity: v.id("entities"),
+        to_entity: v.id("entities"),
+        relationship: v.string(), // "works_at" | "lives_in" | "married_to" | "friend_of" | "owns" | "related_to"
+        confidence: v.float64(),
+        source_memory: v.optional(v.id("memories")), // Memory this was derived from
+        created_at: v.float64(),
+    })
+        .index("by_from", ["from_entity"])
+        .index("by_to", ["to_entity"])
+        .index("by_user", ["user_id"])
+        .index("by_relationship", ["relationship"]),
+    // ============================================================================
+    // MEMORY ENTITIES - Junction table linking memories to entities
+    // ============================================================================
+    memory_entities: defineTable({
+        memory_id: v.id("memories"),
+        entity_id: v.id("entities"),
+        role: v.string(), // "subject" | "object" | "mentioned"
+        created_at: v.float64(),
+    })
+        .index("by_memory", ["memory_id"])
+        .index("by_entity", ["entity_id"]),
     // ============================================================================
     // API KEYS - Authentication
     // ============================================================================
