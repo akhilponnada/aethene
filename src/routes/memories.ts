@@ -216,21 +216,13 @@ memories.patch('/:id', async (c) => {
 
     // Generate new embedding for updated content
     const embedding = await embedText(body.content);
-    const now = Date.now();
     const newVersion = (ex.version || 1) + 1;
 
-    // Mark old version as not latest
-    await convex.mutation('memories:update' as any, {
+    // Use the Convex update mutation which handles versioning internally
+    // It marks old as not latest and creates new version
+    const newId = await convex.mutation('memories:update' as any, {
       id,
-      is_latest: false,
-      updated_at: now,
-    });
-
-    // Create new version
-    const newId = await convex.mutation('memories:create' as any, {
-      userId: userId,
       content: body.content.trim(),
-      isCore: body.isCore !== undefined ? body.isCore : ex.is_core,
       metadata: body.metadata || ex.metadata,
       embedding,
     });
@@ -275,12 +267,8 @@ memories.delete('/:id', async (c) => {
       return authorizationError(c);
     }
 
-    // Soft delete (mark as forgotten)
-    await convex.mutation('memories:update' as any, {
-      id,
-      is_forgotten: true,
-      updated_at: Date.now(),
-    });
+    // Soft delete (mark as forgotten) using the forget mutation
+    await convex.mutation('memories:forget' as any, { id });
 
     return c.json({
       success: true,
