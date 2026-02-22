@@ -45,12 +45,12 @@ export interface ExtractionResult {
 // CONSTANTS
 // ============================================================================
 
-const MAX_CONTENT_LENGTH = 10000;
-const MIN_CONTENT_LENGTH = 10;
-const MIN_MEMORY_LENGTH = 5;
-const MAX_MEMORY_LENGTH = 500;
-const MIN_CONFIDENCE_THRESHOLD = 0.5;
-// No artificial limit on memories - extract everything
+// NO LIMITS - extract everything
+const MAX_CONTENT_LENGTH = Infinity;
+const MIN_CONTENT_LENGTH = 1;
+const MIN_MEMORY_LENGTH = 1;
+const MAX_MEMORY_LENGTH = Infinity;
+const MIN_CONFIDENCE_THRESHOLD = 0.1;
 const MAX_MEMORIES_PER_EXTRACTION = Infinity;
 
 // Temporal patterns for detecting time-sensitive content
@@ -2973,7 +2973,7 @@ async function fallbackExtraction(content: string): Promise<ExtractionResult> {
  * Generate a smart title for content
  */
 export async function generateTitle(content: string): Promise<string> {
-  const sanitized = sanitizeContent(content).slice(0, 2000);
+  const sanitized = sanitizeContent(content).slice(0, 50000); // Use more context for better titles
   const model = getGenAI().getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const prompt = `Generate a concise, descriptive title for this content.
@@ -3004,7 +3004,7 @@ Respond with ONLY the title, nothing else. Keep it under 100 characters.`;
  * Generate a summary for content
  */
 export async function generateSummary(content: string): Promise<string> {
-  const sanitized = sanitizeContent(content).slice(0, 3000);
+  const sanitized = sanitizeContent(content).slice(0, 50000); // Use more context
   const model = getGenAI().getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const prompt = `Summarize this content in 1-2 sentences:
