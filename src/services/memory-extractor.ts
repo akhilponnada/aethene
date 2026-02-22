@@ -50,7 +50,8 @@ const MIN_CONTENT_LENGTH = 10;
 const MIN_MEMORY_LENGTH = 5;
 const MAX_MEMORY_LENGTH = 500;
 const MIN_CONFIDENCE_THRESHOLD = 0.5;
-const MAX_MEMORIES_PER_EXTRACTION = 50;
+// No artificial limit on memories - extract everything
+const MAX_MEMORIES_PER_EXTRACTION = Infinity;
 
 // Temporal patterns for detecting time-sensitive content
 const TEMPORAL_PATTERNS = {
@@ -1773,8 +1774,32 @@ CRITICAL - EXTRACT NEGATIVE FACTS AND FUTURE PLANS:
     - "User is studying for the bar exam"
     - "User has marathon training runs on Saturdays"
 
+CRITICAL - TEMPORAL EXPRESSIONS (NEVER LOSE DATES):
+20. RELATIVE DATES: ALWAYS preserve the EXACT date expression from the input, including relative phrases
+    - NEVER drop "the week before", "last", "a few days ago", "since", "starting from"
+    - "the week before January 1, 2023" → MUST appear as "the week before January 1, 2023" in the fact
+    - "last December" → MUST appear as "last December" in the fact
+    - "since 2020" → MUST appear as "since 2020" in the fact
+21. ALWAYS INCLUDE DATES: When a date/time is mentioned, ALWAYS include it VERBATIM in the fact
+    - WRONG: "John joined a support group"
+    - RIGHT: "John joined the support group the week before January 1, 2023"
+    - WRONG: "User became vegetarian" (if date was given)
+    - RIGHT: "User became vegetarian in March 2022"
+22. DATE EXPRESSIONS TO PRESERVE: week before, week of, day after, month of, last [month], since [date], starting [date], around [date], in early/mid/late [period]
+
+CRITICAL - INFER COMPOUND TERMS:
+23. DIETARY INFERENCE: ALWAYS infer and extract dietary labels from behavior:
+    - Eats fish + does not eat meat → EXTRACT: "User is pescatarian"
+    - Does not eat meat but eats dairy/eggs → EXTRACT: "User is vegetarian"
+    - Does not eat any animal products → EXTRACT: "User is vegan"
+    - Started eating fish again + was vegetarian → EXTRACT: "User is pescatarian", "User started eating fish again"
+24. LIFESTYLE INFERENCE: Infer lifestyle labels from behavior patterns:
+    - Runs marathons + trains regularly → EXTRACT: "User is a runner"
+    - Training for marathon → EXTRACT: "User is training for a marathon", "User is a runner"
+    - Does not drink alcohol → EXTRACT: "User does not drink alcohol", "User is sober" (if applicable)
+
 CRITICAL - CORRECT PRONOUN RESOLUTION:
-20. When multiple people are mentioned, track WHO each fact belongs to:
+25. When multiple people are mentioned, track WHO each fact belongs to:
     - If Sarah mentions "My friend Yuki is a software engineer at Nintendo":
       * RIGHT: "Yuki is a software engineer at Nintendo"
       * WRONG: "Sarah is a software engineer at Nintendo"
@@ -1826,6 +1851,30 @@ Output (ATOMIZE activity, frequency, duration):
 - "User plays tennis every Saturday morning" (isStatic: false, kind: "fact")
 - "User is learning piano" (isStatic: false, kind: "fact")
 - "User has been learning piano for 2 years" (isStatic: false, kind: "fact")
+
+Input: "John joined a support group the week before January 1, 2023."
+Output (PRESERVE RELATIVE DATE EXPRESSION):
+- "John joined a support group the week before January 1, 2023" (isStatic: true, kind: "event")
+Note: The phrase "the week before January 1, 2023" MUST be preserved exactly as written.
+
+Input: "I used to be vegetarian but started eating fish again last year."
+Output (INFER DIETARY LABEL):
+- "User was vegetarian" (isStatic: false, kind: "fact")
+- "User started eating fish again last year" (isStatic: false, kind: "fact")
+- "User is pescatarian" (isStatic: false, kind: "fact")
+Note: Pescatarian is INFERRED from: was vegetarian + now eats fish.
+
+Input: "Sarah is training for the SF Marathon in July. She has long runs on Saturdays."
+Output (TRAINING + SCHEDULE):
+- "Sarah is training for the SF Marathon" (isStatic: true, kind: "fact")
+- "Sarah is training for the SF Marathon in July" (isStatic: true, kind: "fact")
+- "Sarah has long runs on Saturdays" (isStatic: true, kind: "fact")
+- "Sarah is a runner" (isStatic: true, kind: "fact")
+
+Input: "We met around Christmas 2021, just a few days before New Year's."
+Output (PRESERVE ALL DATE CONTEXT):
+- "User met someone around Christmas 2021" (isStatic: false, kind: "event")
+- "User met someone a few days before New Year's 2021" (isStatic: false, kind: "event")
 
 CONTENT:
 ${pronounResolvedContent}
