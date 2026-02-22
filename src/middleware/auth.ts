@@ -356,3 +356,45 @@ export function getScopedKeyContext(c: Context): {
     permissions: c.get('permissions') || ['read', 'write', 'delete', 'admin'],
   };
 }
+
+/**
+ * Validate and resolve userId for requests
+ *
+ * SECURITY: Prevents IDOR attacks by only allowing userId override when:
+ * 1. The API key has 'admin' permission, OR
+ * 2. The requested userId matches an allowed containerTag for scoped keys
+ *
+ * @param c - Hono context
+ * @param requestedUserId - userId from request body/query (optional)
+ * @returns The validated userId to use for the operation
+ */
+export function resolveUserId(c: Context, requestedUserId?: string | null): string {
+  const authUserId = c.get('userId') as string;
+  const permissions = c.get('permissions') as ApiKeyPermission[] | undefined;
+  const containerTags = c.get('containerTags') as string[] | undefined;
+  const isScoped = c.get('isScoped') as boolean | undefined;
+
+  // No override requested - use auth userId
+  if (!requestedUserId || requestedUserId === authUserId) {
+    return authUserId;
+  }
+
+  // Admin keys can access any userId
+  if (permissions?.includes('admin')) {
+    return requestedUserId;
+  }
+
+  // Scoped keys can only access their allowed containerTags
+  if (isScoped && containerTags && containerTags.length > 0) {
+    if (containerTags.includes(requestedUserId) || containerTags.includes('*')) {
+      return requestedUserId;
+    }
+    // Not allowed - fall back to auth userId
+    console.warn(`[Auth] IDOR attempt blocked: key tried to access userId '${requestedUserId}' but only has access to [${containerTags.join(', ')}]`);
+    return authUserId;
+  }
+
+  // Non-scoped, non-admin keys cannot override userId
+  console.warn(`[Auth] IDOR attempt blocked: non-admin key tried to access userId '${requestedUserId}'`);
+  return authUserId;
+}

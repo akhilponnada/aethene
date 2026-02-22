@@ -26,6 +26,7 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
+import { resolveUserId } from '../middleware/auth.js';
 
 const memories = new Hono<AppEnv>();
 
@@ -43,8 +44,9 @@ memories.post('/', async (c) => {
 
   const body = await validateBody(c, CreateMemoriesSchema);
 
-  // Use userId from body if provided (like Supermemory), fallback to auth userId
-  const userId = (body as any).userId || (body as any).containerTag || authUserId;
+  // SECURITY: Validate userId override to prevent IDOR attacks
+  const requestedUserId = (body as any).userId || (body as any).containerTag;
+  const userId = resolveUserId(c, requestedUserId);
 
   try {
     const { extractAndSaveMemories } = await import('../services/memory-extractor.js');
@@ -92,10 +94,9 @@ memories.get('/', async (c) => {
   }
 
   const query = validateQuery(c, ListMemoriesQuerySchema);
-  
 
-  // Use userId from query param if provided (like Supermemory's containerTag)
-  const userId = query.userId || authUserId;
+  // SECURITY: Validate userId override to prevent IDOR attacks
+  const userId = resolveUserId(c, query.userId);
 
   try {
     const { getConvexClient } = await import('../database/convex.js');

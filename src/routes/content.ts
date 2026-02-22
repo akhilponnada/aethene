@@ -25,6 +25,7 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
+import { resolveUserId } from '../middleware/auth.js';
 
 const content = new Hono<AppEnv>();
 
@@ -43,8 +44,9 @@ content.post('/', async (c) => {
   // validateBody throws ValidationError if validation fails (caught by global handler)
   const body = await validateBody(c, IngestContentSchema);
 
-  // Use containerTag or userId from body (like Supermemory), fallback to auth userId
-  const userId = body.containerTag || body.userId || authUserId;
+  // SECURITY: Validate userId override to prevent IDOR attacks
+  const requestedUserId = body.containerTag || body.userId;
+  const userId = resolveUserId(c, requestedUserId);
 
   try {
     const { IngestService } = await import('../services/ingest-service.js');

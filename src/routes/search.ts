@@ -17,6 +17,7 @@ import {
   internalError,
   validateBody,
 } from '../utils/errors.js';
+import { resolveUserId } from '../middleware/auth.js';
 
 const search = new Hono<AppEnv>();
 
@@ -34,8 +35,9 @@ search.post('/', async (c) => {
 
   const body = await validateBody(c, SearchSchema);
 
-  // Use containerTag or userId from body (like Supermemory), fallback to auth userId
-  const userId = body.containerTag || body.userId || authUserId;
+  // SECURITY: Validate userId override to prevent IDOR attacks
+  const requestedUserId = body.containerTag || body.userId;
+  const userId = resolveUserId(c, requestedUserId);
   const containerTag = body.containerTag;
 
   try {

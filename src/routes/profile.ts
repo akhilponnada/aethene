@@ -16,6 +16,7 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
+import { resolveUserId } from '../middleware/auth.js';
 
 const profile = new Hono<AppEnv>();
 
@@ -33,8 +34,9 @@ profile.get('/', async (c) => {
 
   const query = validateQuery(c, ProfileQuerySchema);
 
-  // Use userId from query if provided (like Supermemory), fallback to auth userId
-  const userId = query.userId || query.containerTag || authUserId;
+  // SECURITY: Validate userId override to prevent IDOR attacks
+  const requestedUserId = query.userId || query.containerTag;
+  const userId = resolveUserId(c, requestedUserId);
   const containerTag = query.containerTag;
 
   try {
