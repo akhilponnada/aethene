@@ -1753,6 +1753,33 @@ CRITICAL - ATOMIC FACT EXTRACTION:
       * "User has been learning piano for 2 years"
 15. ONE FACT = ONE PIECE OF INFORMATION: Never combine multiple attributes into a single fact
 
+CRITICAL - EXTRACT NEGATIVE FACTS AND FUTURE PLANS:
+16. NEGATIVE FACTS: Extract what someone does NOT do or does NOT like
+    - "User does not eat meat"
+    - "User is vegetarian"
+    - "User doesn't drink alcohol"
+    - "User is allergic to peanuts"
+17. DIETARY PREFERENCES: Extract all food-related facts
+    - "User is pescatarian" (eats fish but not meat)
+    - "User is vegan"
+    - "User started eating fish again"
+    - "User does not eat meat"
+18. FUTURE PLANS & GOALS: Extract planned activities with dates
+    - "Sarah is training for the SF Marathon in July"
+    - "User plans to visit Japan in March"
+    - "User is saving up for a house"
+19. TRAINING & PREPARATION: Extract ongoing preparation activities
+    - "User is training for a marathon"
+    - "User is studying for the bar exam"
+    - "User has marathon training runs on Saturdays"
+
+CRITICAL - CORRECT PRONOUN RESOLUTION:
+20. When multiple people are mentioned, track WHO each fact belongs to:
+    - If Sarah mentions "My friend Yuki is a software engineer at Nintendo":
+      * RIGHT: "Yuki is a software engineer at Nintendo"
+      * WRONG: "Sarah is a software engineer at Nintendo"
+    - Use context clues: "My friend", "works at" indicates it's about the friend, not the speaker
+
 EXAMPLES:
 
 Input: "John Smith (VP Engineering, Acme Corp) approved the $2M budget for a 15-person team"
@@ -3065,12 +3092,12 @@ async function checkAndSupersede(
   const supersededIds: string[] = [];
 
   try {
-    // Search for semantically similar memories
-    const similarMemories = await convex.query('vectorSearch:searchMemories' as any, {
+    // Search for semantically similar memories (vectorSearch is an Action, not Query)
+    const similarMemories = await convex.action('vectorSearch:searchMemories' as any, {
       userId,
       embedding,
       limit: 10,
-      threshold: 0.85,  // High similarity threshold for contradiction detection
+      minScore: 0.85,  // High similarity threshold for contradiction detection
     });
 
     if (!similarMemories || similarMemories.length === 0) {
@@ -3217,10 +3244,10 @@ export async function extractAndSaveMemories(
         userId,
         content: mem.content,
         isCore,
-        sourceDocument: sourceDocument || null,
-        containerTags: containerTags || null,
+        sourceDocument: sourceDocument || undefined,
+        containerTags: containerTags || undefined,
         embedding,
-        metadata: metadata || null,
+        metadata: metadata || undefined,
         // Auto-forgetting fields from extraction
         memoryKind: mem.kind,
         expiresAt: mem.expiresAt,

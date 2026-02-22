@@ -36,13 +36,15 @@ const memories = new Hono<AppEnv>();
 memories.post('/', async (c) => {
   const startTime = Date.now();
 
-  const userId = c.get('userId');
-  if (!userId) {
+  const authUserId = c.get('userId');
+  if (!authUserId) {
     return authenticationError(c);
   }
 
   const body = await validateBody(c, CreateMemoriesSchema);
 
+  // Use userId from body if provided (like Supermemory), fallback to auth userId
+  const userId = (body as any).userId || (body as any).containerTag || authUserId;
 
   try {
     const { extractAndSaveMemories } = await import('../services/memory-extractor.js');

@@ -31,6 +31,8 @@ export const CreateMemorySchema = z.object({
 
 export const CreateMemoriesSchema = z.object({
   memories: z.array(CreateMemorySchema).min(1, 'At least one memory is required'),
+  userId: z.string().max(200).optional(),  // Override auth userId (like Supermemory)
+  containerTag: z.string().max(200).optional(),  // Alternative to userId
 });
 
 export const UpdateMemorySchema = z.object({

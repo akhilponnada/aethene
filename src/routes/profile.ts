@@ -33,8 +33,8 @@ profile.get('/', async (c) => {
 
   const query = validateQuery(c, ProfileQuerySchema);
 
-  // Always use authUserId, containerTag is for filtering
-  const userId = authUserId;
+  // Use userId from query if provided (like Supermemory), fallback to auth userId
+  const userId = query.userId || query.containerTag || authUserId;
   const containerTag = query.containerTag;
 
   try {
