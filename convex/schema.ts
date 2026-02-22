@@ -172,6 +172,7 @@ export default defineSchema({
     container_tags: v.optional(v.array(v.string())),  // Restrict access to specific containers
     permissions: v.optional(v.array(v.string())),  // "read", "write", "delete", "admin"
     parent_key_id: v.optional(v.string()),  // Reference to parent API key (for scoped keys)
+    parent_user_id: v.optional(v.string()),  // Parent's userId for ownership verification
     description: v.optional(v.string()),  // User-provided description
   })
     .index("by_key", ["key"])

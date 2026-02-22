@@ -220,7 +220,8 @@ export const createScopedKey = mutation({
   args: {
     key: v.string(),
     parentKeyId: v.string(),
-    userId: v.string(),
+    userId: v.string(),           // The scoped userId (e.g., "scoped-user-alice")
+    parentUserId: v.optional(v.string()),  // The parent's userId for ownership checks
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     containerTags: v.array(v.string()),
@@ -246,6 +247,7 @@ export const createScopedKey = mutation({
     return ctx.db.insert("api_keys", {
       key: args.key,
       user_id: args.userId,
+      parent_user_id: args.parentUserId,  // Store parent for ownership checks
       name: args.name,
       description: args.description,
       rate_limit: args.rateLimit,
@@ -286,8 +288,8 @@ export const revokeScopedKey = mutation({
       throw new Error("API key not found");
     }
 
-    // Verify ownership - the parent user must own this key
-    if (apiKey.user_id !== args.parentUserId) {
+    // Verify ownership - check parent_user_id (the original creator)
+    if (apiKey.parent_user_id !== args.parentUserId) {
       throw new Error("Access denied: You don't own this API key");
     }
 
@@ -324,8 +326,8 @@ export const updateScopedKey = mutation({
       throw new Error("API key not found");
     }
 
-    // Verify ownership
-    if (apiKey.user_id !== args.parentUserId) {
+    // Verify ownership - check parent_user_id (the original creator)
+    if (apiKey.parent_user_id !== args.parentUserId) {
       throw new Error("Access denied: You don't own this API key");
     }
 
