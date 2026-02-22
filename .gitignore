@@ -44,3 +44,15 @@ Thumbs.db
 external-repos/
 reverse-engineering/
 supermemory*.md
+# Competitive analysis (private)
+test-supermemory*.sh
+*supermemory*.ts
+*comparison*.ts
+*parity*.ts
+*battle*.ts
+tests/debug-*.ts
+tests/enterprise-*.ts
+tests/latency-*.ts
+tests/longmemeval-*.ts
+tests/deep-*.ts
+tests/full-*.ts
