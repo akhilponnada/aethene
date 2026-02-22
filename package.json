@@ -13,10 +13,18 @@
     "server": "tsx src/server.ts",
     "server:dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "start": "node dist/server.js",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run tests/integration/",
+    "test:load": "tsx tests/load/load-test.ts",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "audit": "npm audit",
-    "audit:fix": "npm audit fix"
+    "audit:fix": "npm audit fix",
+    "docker:build": "docker build -t aethene:latest .",
+    "docker:run": "docker run -p 3006:3006 --env-file .env aethene:latest"
   },
   "keywords": [
     "ai-memory",

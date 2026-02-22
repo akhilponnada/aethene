@@ -1,0 +1,687 @@
+openapi: 3.1.0
+info:
+  title: Aethene API
+  description: |
+    **The AI Memory Layer**
+
+    Aethene provides a powerful, production-ready API for AI memory management.
+    Store, search, and recall context for your AI applications with enterprise-grade
+    features including vector search, semantic understanding, entity extraction,
+    and memory versioning.
+
+    ## Authentication
+
+    All `/v1/*` endpoints require API key authentication. Include your API key in the
+    `Authorization` header:
+
+    ```
+    Authorization: Bearer sk_your_api_key_here
+    ```
+
+    ## Rate Limits
+
+    - Default: 1000 requests/hour per API key
+    - Configurable per key with `rateLimit` and `monthlyLimit` fields
+
+    ## Response Format
+
+    All responses are JSON with consistent error handling:
+
+    ```json
+    {
+      "success": true,
+      "data": { ... }
+    }
+    ```
+
+    Error responses:
+    ```json
+    {
+      "success": false,
+      "error": "Error description",
+      "code": "ERROR_CODE"
+    }
+    ```
+  version: 1.0.0
+  contact:
+    name: Aethene Support
+    url: https://aethene.com
+    email: support@aethene.com
+  license:
+    name: Proprietary
+    url: https://aethene.com/terms
+
+servers:
+  - url: https://api.aethene.com
+    description: Production
+  - url: http://localhost:3006
+    description: Local development
+
+tags:
+  - name: Health
+    description: Health check and monitoring endpoints
+  - name: Memories
+    description: Memory storage and retrieval
+  - name: Search
+    description: Search and recall operations
+  - name: Documents
+    description: Document ingestion and processing
+  - name: Profile
+    description: User profile and context
+  - name: Entities
+    description: Entity graph and relationships
+  - name: Auth
+    description: API key management
+  - name: Settings
+    description: User configuration
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Simple health check endpoint
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: aethene
+                  version:
+                    type: string
+                    example: '1.0.0'
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health/deep:
+    get:
+      tags: [Health]
+      summary: Deep health check
+      description: Checks all service dependencies
+      security: []
+      responses:
+        '200':
+          description: All services healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded]
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        latencyMs:
+                          type: number
+                        error:
+                          type: string
+        '503':
+          description: Service degraded
+
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Get metrics
+      description: Prometheus-compatible metrics endpoint
+      security: []
+      responses:
+        '200':
+          description: Metrics data
+          content:
+            application/json:
+              schema:
+                type: object
+            text/plain:
+              schema:
+                type: string
+
+  /v1/memories:
+    get:
+      tags: [Memories]
+      summary: List memories
+      description: Retrieve memories for the authenticated user
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: isCore
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+        - name: userId
+          in: query
+          description: Override userId (scoped keys only)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of memories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Memory'
+                  count:
+                    type: integer
+                  hasMore:
+                    type: boolean
+
+    post:
+      tags: [Memories]
+      summary: Create memories
+      description: Create one or more memories with automatic extraction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memories]
+              properties:
+                memories:
+                  type: array
+                  items:
+                    type: object
+                    required: [content]
+                    properties:
+                      content:
+                        type: string
+                        description: Memory content
+                      isCore:
+                        type: boolean
+                        description: Force core memory status
+                      metadata:
+                        type: object
+      responses:
+        '201':
+          description: Memories created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  created:
+                    type: integer
+                  memories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        content:
+                          type: string
+                        isCore:
+                          type: boolean
+
+  /v1/memories/{id}:
+    get:
+      tags: [Memories]
+      summary: Get memory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Memory'
+        '404':
+          description: Memory not found
+
+    patch:
+      tags: [Memories]
+      summary: Update memory
+      description: Updates a memory, creating a new version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Memory updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  id:
+                    type: string
+                    description: New version ID
+                  previousId:
+                    type: string
+                  version:
+                    type: integer
+
+    delete:
+      tags: [Memories]
+      summary: Forget memory
+      description: Soft delete (forget) a memory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory forgotten
+
+  /v1/memories/stats:
+    get:
+      tags: [Memories]
+      summary: Get memory statistics
+      responses:
+        '200':
+          description: Memory statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      core:
+                        type: integer
+                      recent:
+                        type: integer
+                      forgotten:
+                        type: integer
+
+  /v1/search:
+    post:
+      tags: [Search]
+      summary: Search memories
+      description: Vector search across memories and documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  description: Search query
+                limit:
+                  type: integer
+                  default: 10
+                  maximum: 100
+                mode:
+                  type: string
+                  enum: [memories, documents, hybrid]
+                  default: hybrid
+                rerank:
+                  type: boolean
+                  default: false
+                  description: Use LLM reranking for better results
+                threshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  description: Minimum similarity threshold
+                filters:
+                  type: object
+                  description: Advanced AND/OR filters
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        content:
+                          type: string
+                        score:
+                          type: number
+                        type:
+                          type: string
+                  total:
+                    type: integer
+                  latencyMs:
+                    type: integer
+
+  /v1/recall:
+    post:
+      tags: [Search]
+      summary: Recall with context
+      description: Search with assembled context for LLM usage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                limit:
+                  type: integer
+                  default: 10
+                includeProfile:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Recall results with context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                  context:
+                    type: string
+                    description: Pre-assembled context for LLM
+                  profile:
+                    type: object
+
+  /v1/documents:
+    post:
+      tags: [Documents]
+      summary: Create document
+      description: Ingest and process a document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                title:
+                  type: string
+                contentType:
+                  type: string
+                  enum: [text, url, file]
+                customId:
+                  type: string
+                  description: Custom ID for deduplication
+                containerTags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Document created
+
+  /v1/profile:
+    get:
+      tags: [Profile]
+      summary: Get user profile
+      description: Assembled profile from memories
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: object
+                    properties:
+                      static:
+                        type: array
+                        items:
+                          type: string
+                      dynamic:
+                        type: array
+                        items:
+                          type: string
+
+  /v1/entities:
+    get:
+      tags: [Entities]
+      summary: List entities
+      description: Get extracted entities (people, places, etc.)
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [person, organization, location, date, concept]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of entities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Entity'
+
+  /v1/entities/graph:
+    get:
+      tags: [Entities]
+      summary: Get entity graph
+      description: Full entity relationship graph
+      responses:
+        '200':
+          description: Entity graph data
+
+  /v1/auth/keys:
+    get:
+      tags: [Auth]
+      summary: List scoped keys
+      responses:
+        '200':
+          description: List of scoped API keys
+
+    post:
+      tags: [Auth]
+      summary: Create scoped key
+      description: Create a scoped API key with limited permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [containerTags, permissions]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                containerTags:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                    enum: [read, write, delete, admin]
+                rateLimit:
+                  type: integer
+                monthlyLimit:
+                  type: integer
+                expiresIn:
+                  type: integer
+                  description: Expiration in seconds
+      responses:
+        '201':
+          description: Scoped key created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  key:
+                    type: string
+                    description: The API key (shown only once)
+                  id:
+                    type: string
+
+  /v1/auth/key-info:
+    get:
+      tags: [Auth]
+      summary: Get current key info
+      responses:
+        '200':
+          description: Current API key information
+
+  /v1/settings:
+    get:
+      tags: [Settings]
+      summary: Get settings
+      responses:
+        '200':
+          description: User settings
+
+    patch:
+      tags: [Settings]
+      summary: Update settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shouldLlmFilter:
+                  type: boolean
+                chunkSize:
+                  type: integer
+                chunkOverlap:
+                  type: integer
+      responses:
+        '200':
+          description: Settings updated
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key authentication
+
+  schemas:
+    Memory:
+      type: object
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+        isCore:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        isDeleted:
+          type: boolean
+        metadata:
+          type: object
+          nullable: true
+
+    Entity:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [person, organization, location, date, concept, other]
+        mentionCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object

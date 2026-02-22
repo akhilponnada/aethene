@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Build output (we rebuild in Docker)
+dist
+
+# Development files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Tests
+tests
+*.test.ts
+*.spec.ts
+coverage
+.nyc_output
+
+# Documentation
+*.md
+docs
+
+# External repos (not needed for API)
+external-repos
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

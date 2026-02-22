@@ -52,7 +52,38 @@ try {
 // APP SETUP
 // =============================================================================
 
-const app = new Hono();
+import type { AppEnv } from './types/hono.js';
+import { logger } from './utils/logger.js';
+
+const app = new Hono<AppEnv>();
+
+// =============================================================================
+// REQUEST ID MIDDLEWARE (for distributed tracing)
+// =============================================================================
+
+app.use('/*', async (c, next) => {
+  // Generate or use existing request ID
+  const requestId = c.req.header('x-request-id') || `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  c.set('requestId', requestId);
+  c.header('X-Request-ID', requestId);
+
+  const start = Date.now();
+
+  await next();
+
+  // Log request completion
+  const latencyMs = Date.now() - start;
+  const userId = c.get('userId');
+
+  logger.response({
+    method: c.req.method,
+    path: c.req.path,
+    statusCode: c.res.status,
+    latencyMs,
+    requestId,
+    userId,
+  });
+});
 
 // =============================================================================
 // SECURITY MIDDLEWARE
@@ -100,6 +131,164 @@ app.get('/health', (c) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// =============================================================================
+// DEEP HEALTH CHECK (Public) - Checks all dependencies
+// =============================================================================
+
+app.get('/health/deep', async (c) => {
+  const checks: Record<string, { status: string; latencyMs?: number; error?: string }> = {};
+  const startTime = Date.now();
+
+  // Check Convex database
+  try {
+    const convexStart = Date.now();
+    const { getConvexClient } = await import('./database/convex.js');
+    const convex = getConvexClient();
+    // Simple query to verify connection
+    await convex.query('apiKeys:getByKey' as any, { key: 'health-check-probe' });
+    checks.database = {
+      status: 'healthy',
+      latencyMs: Date.now() - convexStart,
+    };
+  } catch (error: any) {
+    checks.database = {
+      status: 'unhealthy',
+      error: error.message?.slice(0, 100),
+    };
+  }
+
+  // Check Gemini API (embeddings)
+  try {
+    const geminiStart = Date.now();
+    const { embedText } = await import('./vector/embeddings.js');
+    await embedText('health check');
+    checks.embeddings = {
+      status: 'healthy',
+      latencyMs: Date.now() - geminiStart,
+    };
+  } catch (error: any) {
+    checks.embeddings = {
+      status: 'unhealthy',
+      error: error.message?.slice(0, 100),
+    };
+  }
+
+  // Determine overall status
+  const allHealthy = Object.values(checks).every(c => c.status === 'healthy');
+  const overallStatus = allHealthy ? 'healthy' : 'degraded';
+
+  return c.json({
+    status: overallStatus,
+    service: 'aethene',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    totalLatencyMs: Date.now() - startTime,
+    checks,
+  }, allHealthy ? 200 : 503);
+});
+
+// =============================================================================
+// METRICS ENDPOINT (Public) - For monitoring
+// =============================================================================
+
+// In-memory metrics (would use Prometheus/StatsD in production)
+const metrics = {
+  requestCount: 0,
+  errorCount: 0,
+  latencySum: 0,
+  latencyCount: 0,
+  memorySearches: 0,
+  documentsProcessed: 0,
+  lastReset: Date.now(),
+};
+
+// Metrics middleware
+app.use('/*', async (c, next) => {
+  const start = Date.now();
+  metrics.requestCount++;
+
+  try {
+    await next();
+  } finally {
+    const latency = Date.now() - start;
+    metrics.latencySum += latency;
+    metrics.latencyCount++;
+
+    if (c.res.status >= 400) {
+      metrics.errorCount++;
+    }
+  }
+});
+
+app.get('/metrics', (c) => {
+  const uptimeMs = Date.now() - metrics.lastReset;
+  const avgLatency = metrics.latencyCount > 0 ? metrics.latencySum / metrics.latencyCount : 0;
+
+  // Prometheus-style metrics format
+  const prometheusFormat = c.req.header('Accept')?.includes('text/plain');
+
+  if (prometheusFormat) {
+    const lines = [
+      `# HELP aethene_requests_total Total number of requests`,
+      `# TYPE aethene_requests_total counter`,
+      `aethene_requests_total ${metrics.requestCount}`,
+      ``,
+      `# HELP aethene_errors_total Total number of errors`,
+      `# TYPE aethene_errors_total counter`,
+      `aethene_errors_total ${metrics.errorCount}`,
+      ``,
+      `# HELP aethene_latency_avg_ms Average request latency in milliseconds`,
+      `# TYPE aethene_latency_avg_ms gauge`,
+      `aethene_latency_avg_ms ${avgLatency.toFixed(2)}`,
+      ``,
+      `# HELP aethene_uptime_seconds Server uptime in seconds`,
+      `# TYPE aethene_uptime_seconds gauge`,
+      `aethene_uptime_seconds ${Math.floor(uptimeMs / 1000)}`,
+      ``,
+      `# HELP aethene_memory_searches_total Total memory searches`,
+      `# TYPE aethene_memory_searches_total counter`,
+      `aethene_memory_searches_total ${metrics.memorySearches}`,
+    ];
+    return c.text(lines.join('\n'));
+  }
+
+  return c.json({
+    requests: {
+      total: metrics.requestCount,
+      errors: metrics.errorCount,
+      errorRate: metrics.requestCount > 0 ? (metrics.errorCount / metrics.requestCount * 100).toFixed(2) + '%' : '0%',
+    },
+    latency: {
+      avgMs: Math.round(avgLatency),
+      samples: metrics.latencyCount,
+    },
+    uptime: {
+      ms: uptimeMs,
+      formatted: formatUptime(uptimeMs),
+    },
+    memory: {
+      searches: metrics.memorySearches,
+      documentsProcessed: metrics.documentsProcessed,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+function formatUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+// Export metrics for other modules to update
+export { metrics };
 
 // =============================================================================
 // API INFO (Public)

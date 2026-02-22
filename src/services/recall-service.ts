@@ -361,10 +361,17 @@ export async function searchMemories(
     // Deduplicate
     memoryResults = deduplicateResults(memoryResults);
 
-    // Sort by similarity (now includes is_latest boost)
+    // Apply intent-based reranking for better query understanding
+    // This handles cases like "where does X live" returning residence info over "parents live in..."
+    if (memoryResults.length > 1) {
+      memoryResults = intentBasedRerank(query, memoryResults);
+    }
+
+    // Sort by similarity (now includes is_latest boost + intent boost)
     memoryResults.sort((a, b) => b.similarity - a.similarity);
 
     // Apply smart reranking if requested (adds ~100-200ms latency)
+    // This uses Gemini for cross-encoder style scoring on top of intent-based ranking
     if (rerank && memoryResults.length > 1) {
       memoryResults = await smartRerank(query, memoryResults);
     }
@@ -768,29 +775,296 @@ Return ONLY a JSON array of scores in the same order, like: [0.9, 0.7, 0.3, ...]
 }
 
 /**
- * Simple keyword-based reranking fallback
+ * Query intent patterns for better understanding
+ * Maps question patterns to relevant content indicators
  */
-function keywordRerank(query: string, results: MemoryResult[]): MemoryResult[] {
-  const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+const QUERY_INTENT_PATTERNS: Array<{
+  pattern: RegExp;
+  intentType: string;
+  positiveIndicators: string[];
+  negativeIndicators: string[];
+  weight: number;
+}> = [
+  // Location/Residence queries - "where does X live", "where is X located"
+  {
+    pattern: /where\s+(does|did|is|was)\s+\w+\s*(live|reside|stay|located|based|living)/i,
+    intentType: 'residence',
+    positiveIndicators: ['lives in', 'resides in', 'moved to', 'bought', 'condo', 'apartment', 'house', 'home', 'address', 'relocated', 'living in', 'based in', 'stays in'],
+    negativeIndicators: ['parents live', 'family lives', 'grew up in', 'born in', 'visited', 'traveled to', 'trip to'],
+    weight: 0.35
+  },
+  // Work/Job queries - "where does X work", "what is X's job"
+  {
+    pattern: /where\s+(does|did)\s+\w+\s*work|what\s+(is|was)\s+\w+('s)?\s*(job|role|position|profession|occupation)/i,
+    intentType: 'employment',
+    positiveIndicators: ['works at', 'works as', 'employed at', 'job at', 'position at', 'role at', 'started at', 'joined'],
+    negativeIndicators: ['previous job', 'used to work', 'left', 'quit'],
+    weight: 0.30
+  },
+  // Education queries
+  {
+    pattern: /where\s+(did|does)\s+\w+\s*(go\s+to\s+school|study|graduate|attend|get\s+degree)|what\s+(is|was)\s+\w+('s)?\s*(degree|education|school|university|college)/i,
+    intentType: 'education',
+    positiveIndicators: ['graduated from', 'degree from', 'studied at', 'attended', 'mba', 'bachelor', 'master', 'phd', 'university', 'college', 'school'],
+    negativeIndicators: [],
+    weight: 0.25
+  },
+  // Diet/Food preferences
+  {
+    pattern: /what\s+(does|did)\s+\w+\s*eat|what\s+(is|was)\s+\w+('s)?\s*(diet|food preference)/i,
+    intentType: 'diet',
+    positiveIndicators: ['vegetarian', 'vegan', 'pescatarian', 'eats', 'diet', 'doesn\'t eat', 'allergic'],
+    negativeIndicators: [],
+    weight: 0.25
+  },
+  // Relationship queries - "who is X"
+  {
+    pattern: /who\s+(is|was)\s+\w+/i,
+    intentType: 'relationship',
+    positiveIndicators: ['is a', 'works as', 'friend', 'colleague', 'manager', 'partner', 'spouse', 'met at'],
+    negativeIndicators: [],
+    weight: 0.20
+  },
+  // Time/When queries
+  {
+    pattern: /when\s+(did|does|is|was|will)/i,
+    intentType: 'temporal',
+    positiveIndicators: ['in', 'on', 'at', 'during', 'ago', 'started', 'began', 'will', 'planning'],
+    negativeIndicators: [],
+    weight: 0.15
+  },
+  // Current state queries - "what is X doing", "how is X"
+  {
+    pattern: /what\s+(is|are)\s+\w+\s*(doing|working on|planning)|how\s+(is|are)\s+\w+/i,
+    intentType: 'current_state',
+    positiveIndicators: ['currently', 'now', 'working on', 'planning', 'doing'],
+    negativeIndicators: ['used to', 'previously', 'before'],
+    weight: 0.20
+  },
+];
+
+/**
+ * Extract the subject/entity from a query
+ * e.g., "Where does Sarah live?" -> "sarah"
+ */
+function extractQuerySubject(query: string): string | null {
+  // Common patterns for extracting the subject
+  const patterns = [
+    /where\s+(?:does|did|is|was)\s+(\w+)/i,
+    /what\s+(?:is|was|does|did)\s+(\w+)(?:'s)?/i,
+    /who\s+(?:is|was)\s+(\w+)/i,
+    /when\s+(?:did|does|is|was|will)\s+(\w+)/i,
+    /how\s+(?:is|are|does|did)\s+(\w+)/i,
+    /(\w+)(?:'s)?\s+(?:job|work|home|house|apartment)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match && match[1]) {
+      const subject = match[1].toLowerCase();
+      // Filter out common non-subject words
+      if (!['the', 'a', 'an', 'this', 'that', 'my', 'your', 'their', 'our'].includes(subject)) {
+        return subject;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract key terms from query for exact matching
+ * Identifies numbers, proper nouns, and specific terms that should have exact matches
+ */
+function extractKeyTerms(query: string): { numbers: string[]; properNouns: string[]; keywords: string[] } {
+  const numbers: string[] = [];
+  const properNouns: string[] = [];
+  const keywords: string[] = [];
+
+  // Extract numbers (including currency, percentages)
+  const numberMatches = query.match(/\$?[\d,]+(?:\.\d+)?%?|\d+(?:st|nd|rd|th)?/gi);
+  if (numberMatches) {
+    numbers.push(...numberMatches.map(n => n.toLowerCase()));
+  }
+
+  // Extract words - check for proper nouns (capitalized words not at sentence start)
+  const words = query.split(/\s+/);
+  words.forEach((word, index) => {
+    // Clean word
+    const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    if (cleanWord.length < 2) return;
+
+    // Check if capitalized (proper noun candidate)
+    if (index > 0 && /^[A-Z]/.test(word) && word.length > 2) {
+      properNouns.push(cleanWord);
+    }
+
+    // Domain-specific keywords that should be exact matched
+    const importantKeywords = [
+      'budget', 'revenue', 'salary', 'target', 'goal', 'deadline',
+      'price', 'cost', 'amount', 'total', 'quarterly', 'annual',
+      'q1', 'q2', 'q3', 'q4', 'million', 'billion', 'thousand',
+      'ssn', 'password', 'secret', 'api', 'key', 'token',
+      'address', 'phone', 'email', 'birthday', 'anniversary',
+    ];
+
+    if (importantKeywords.includes(cleanWord)) {
+      keywords.push(cleanWord);
+    }
+  });
+
+  return { numbers, properNouns, keywords };
+}
+
+/**
+ * Intent-based reranking with query understanding
+ * Analyzes query intent and boosts/penalizes results accordingly
+ */
+function intentBasedRerank(query: string, results: MemoryResult[]): MemoryResult[] {
+  const queryLower = query.toLowerCase();
+  const subject = extractQuerySubject(query);
+  const keyTerms = extractKeyTerms(query);
+
+  // Find matching intent pattern
+  let matchedIntent: typeof QUERY_INTENT_PATTERNS[0] | null = null;
+  for (const intentPattern of QUERY_INTENT_PATTERNS) {
+    if (intentPattern.pattern.test(query)) {
+      matchedIntent = intentPattern;
+      break;
+    }
+  }
+
+  // Extract significant query words (excluding stop words)
+  const stopWords = new Set(['what', 'where', 'when', 'who', 'how', 'why', 'which', 'is', 'are', 'was', 'were', 'does', 'did', 'do', 'the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'and', 'or', 'but', 'with', 'by', 'from', 'as', 'about', 'that', 'this', 'it', 'its', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must', 'shall']);
+  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
   const scored = results.map(result => {
     const content = result.memory.toLowerCase();
     let boost = 0;
+    let penalty = 0;
 
-    for (const word of queryWords) {
-      if (content.includes(word)) {
-        boost += 0.05;
+    // 0. EXACT KEY TERM MATCHING - Highest priority for specific numbers/terms
+    // If query contains "$5M budget" and result contains "$5M" or "5 million", massive boost
+    let exactMatchBoost = 0;
+
+    // Check for number matches (critical for financial data)
+    for (const num of keyTerms.numbers) {
+      const cleanNum = num.replace(/[$,%]/g, '');
+      // Check for exact number or word form
+      if (content.includes(num) || content.includes(cleanNum)) {
+        exactMatchBoost += 0.25;
+      }
+      // Check for word forms (5M -> 5 million, $5,000 -> 5000)
+      const numValue = parseFloat(cleanNum.replace(/,/g, ''));
+      if (!isNaN(numValue)) {
+        // Million/billion detection
+        if (content.includes(`${numValue} million`) || content.includes(`${numValue}m`)) {
+          exactMatchBoost += 0.20;
+        }
+        if (content.includes(`${numValue} billion`) || content.includes(`${numValue}b`)) {
+          exactMatchBoost += 0.20;
+        }
       }
     }
 
+    // Check for proper noun matches
+    for (const noun of keyTerms.properNouns) {
+      if (content.includes(noun)) {
+        exactMatchBoost += 0.15;
+      }
+    }
+
+    // Check for important keyword matches
+    for (const keyword of keyTerms.keywords) {
+      if (content.includes(keyword)) {
+        exactMatchBoost += 0.15;
+      }
+    }
+
+    boost += Math.min(0.50, exactMatchBoost); // Cap exact match boost at 50%
+
+    // 1. Subject matching - strong boost if the query subject appears in the result
+    if (subject && content.includes(subject)) {
+      boost += 0.15;
+    } else if (subject && !content.includes(subject)) {
+      // Penalty if the subject doesn't match at all
+      penalty += 0.10;
+    }
+
+    // 2. Intent-based scoring
+    if (matchedIntent) {
+      // Check positive indicators
+      let positiveMatches = 0;
+      for (const indicator of matchedIntent.positiveIndicators) {
+        if (content.includes(indicator.toLowerCase())) {
+          positiveMatches++;
+        }
+      }
+      // Boost based on number of positive indicators matched
+      if (positiveMatches > 0) {
+        boost += Math.min(matchedIntent.weight, positiveMatches * (matchedIntent.weight / 3));
+      }
+
+      // Check negative indicators (e.g., "parents live" when asking where someone lives)
+      for (const indicator of matchedIntent.negativeIndicators) {
+        if (content.includes(indicator.toLowerCase())) {
+          penalty += matchedIntent.weight * 0.6;  // Significant penalty for negative indicators
+        }
+      }
+    }
+
+    // 3. Keyword overlap scoring - more sophisticated than simple presence
+    let keywordScore = 0;
+    let exactPhraseBoost = 0;
+
+    for (const word of queryWords) {
+      if (content.includes(word)) {
+        keywordScore += 0.03;  // Base boost per keyword
+
+        // Extra boost for exact phrase matches (consecutive words)
+        const wordIndex = content.indexOf(word);
+        if (wordIndex > 0) {
+          // Check if previous/next query words are adjacent in content
+          const queryWordIdx = queryWords.indexOf(word);
+          if (queryWordIdx > 0) {
+            const prevWord = queryWords[queryWordIdx - 1];
+            const contextBefore = content.substring(Math.max(0, wordIndex - 30), wordIndex);
+            if (contextBefore.includes(prevWord)) {
+              exactPhraseBoost += 0.05;
+            }
+          }
+        }
+      }
+    }
+
+    boost += Math.min(0.20, keywordScore);  // Cap keyword boost
+    boost += Math.min(0.15, exactPhraseBoost);  // Cap phrase boost
+
+    // 4. Specificity scoring - prefer more specific, detailed memories
+    // Longer memories with relevant content are often more informative
+    const wordCount = result.memory.split(/\s+/).length;
+    if (wordCount >= 10 && wordCount <= 50) {
+      boost += 0.02;  // Small boost for reasonably detailed memories
+    }
+
+    // Calculate final score
+    const adjustedSimilarity = Math.max(0, Math.min(1.0, result.similarity + boost - penalty));
+
     return {
       ...result,
-      similarity: Math.min(1.0, result.similarity + boost)
+      similarity: adjustedSimilarity
     };
   });
 
   scored.sort((a, b) => b.similarity - a.similarity);
   return scored;
+}
+
+/**
+ * Simple keyword-based reranking fallback
+ */
+function keywordRerank(query: string, results: MemoryResult[]): MemoryResult[] {
+  // Use intent-based reranking as the new default
+  return intentBasedRerank(query, results);
 }
 
 // ============================================================================

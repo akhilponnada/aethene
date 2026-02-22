@@ -20,6 +20,8 @@ export interface AppVariables {
   isScoped?: boolean;
   containerTags?: string[];
   permissions?: ApiKeyPermission[];
+  // Request tracking
+  requestId?: string;
 }
 
 /**
