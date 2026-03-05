@@ -88,16 +88,15 @@ search.post('/', async (c) => {
         // Container tag for filtering results
         containerTag,
       });
+      // Return Supermemory-compatible format exactly
       results = response.results.map((r) => ({
         id: r.id,
-        content: r.memory,
-        type: 'memory',
-        score: r.similarity,
-        version: r.version,
-        isLatest: r.isLatest,  // Indicates if this is the current version
-        updatedAt: r.updatedAt,
-        metadata: r.metadata,
+        memory: r.memory,
+        similarity: r.similarity,
         rootMemoryId: r.rootMemoryId,
+        metadata: r.metadata,
+        updatedAt: r.updatedAt,
+        version: r.version,
       }));
       total = response.total;
     }
@@ -171,14 +170,15 @@ search.post('/recall', async (c) => {
       }
     }
 
-    // Format results
+    // Format results - Supermemory-compatible format
     const results = searchResponse.results.map((r) => ({
       id: r.id,
-      content: r.memory,
-      score: r.similarity,
-      version: r.version,
-      updatedAt: r.updatedAt,
+      memory: r.memory,
+      similarity: r.similarity,
       rootMemoryId: r.rootMemoryId,
+      metadata: r.metadata,
+      updatedAt: r.updatedAt,
+      version: r.version,
     }));
 
     return c.json({

@@ -60,7 +60,8 @@ export const searchDocuments = action({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 10;
-    const minScore = args.minScore ?? 0.5;
+    // Use 0.65 threshold like Supermemory for quality matches
+    const minScore = args.minScore ?? 0.65;
 
     const results = await ctx.vectorSearch("documents", "by_embedding", {
       vector: args.embedding,
@@ -102,7 +103,8 @@ export const searchChunks = action({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 10;
-    const minScore = args.minScore ?? 0.5;
+    // Use 0.65 threshold like Supermemory for quality matches
+    const minScore = args.minScore ?? 0.65;
 
     const results = await ctx.vectorSearch("document_chunks", "by_embedding", {
       vector: args.embedding,
@@ -131,6 +133,37 @@ export const searchChunks = action({
   },
 });
 
+// Helper function to calculate keyword match boost
+// Returns a boost factor (1.0 = no boost, up to 1.15 = 15% boost)
+// Keep boost modest so semantic similarity remains the primary ranking signal
+function calculateKeywordBoost(query: string, content: string): number {
+  if (!query || !content) return 1.0;
+
+  // Normalize and tokenize query into words (lowercase, alphanumeric only)
+  const queryWords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => w.length > 2); // Skip very short words
+
+  if (queryWords.length === 0) return 1.0;
+
+  const contentLower = content.toLowerCase();
+
+  // Count how many query words appear in the content
+  let matchCount = 0;
+  for (const word of queryWords) {
+    if (contentLower.includes(word)) {
+      matchCount++;
+    }
+  }
+
+  // Calculate boost based on match ratio (0% to 15% boost)
+  // Keep boost modest - semantic match should dominate ranking
+  const matchRatio = matchCount / queryWords.length;
+  return 1.0 + (matchRatio * 0.15);
+}
+
 // Search memories by vector similarity
 export const searchMemories = action({
   args: {
@@ -139,6 +172,8 @@ export const searchMemories = action({
     limit: v.optional(v.number()),
     minScore: v.optional(v.number()),
     isCore: v.optional(v.boolean()),
+    // Original query text for keyword boosting
+    query: v.optional(v.string()),
     // Container tag for scoped search
     containerTag: v.optional(v.string()),
     // Metadata filters for advanced search
@@ -152,7 +187,8 @@ export const searchMemories = action({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 10;
-    const minScore = args.minScore ?? 0.5;
+    // Use 0.65 threshold like Supermemory for quality matches
+    const minScore = args.minScore ?? 0.65;
 
     // When containerTag is provided, fetch more to filter by container
     const fetchMultiplier = args.containerTag ? 5 : 2;
@@ -190,18 +226,29 @@ export const searchMemories = action({
         const mem = memoryMap[r._id];
         let score = r._score;
 
-        // Apply recency boost for consistent ranking
+        // MINIMAL BOOSTS - Match Supermemory's pure cosine similarity approach
+        // Semantic match quality should be the primary ranking factor
+
+        // Tiny recency boost (3% max) - barely noticeable tiebreaker
         const updatedAt = mem.updated_at || mem.created_at || 0;
         if (updatedAt > 0) {
           const now = Date.now();
           const ageInDays = Math.min(365, (now - updatedAt) / (1000 * 60 * 60 * 24));
-          // 50% recency boost: newer memories rank higher
-          const recencyBoost = 1.0 + (0.50 * (1 - ageInDays / 365));
-          score = Math.min(1.0, score * recencyBoost);
+          const recencyBoost = 1.0 + (0.03 * (1 - ageInDays / 365));
+          score = score * recencyBoost;
         }
-        // Boost for confirmed latest versions
+
+        // Tiny boost for confirmed latest versions (2%)
         if (mem.is_latest === true) {
-          score = Math.min(1.0, score * 1.3);
+          score = score * 1.02;
+        }
+
+        // Small keyword boost (5% max) - helps with exact term matches
+        if (args.query && mem.content) {
+          const keywordBoost = calculateKeywordBoost(args.query, mem.content);
+          // Reduce keyword boost impact: 15% -> 5%
+          const adjustedBoost = 1.0 + (keywordBoost - 1.0) / 3;
+          score = score * adjustedBoost;
         }
 
         return {
@@ -245,10 +292,13 @@ export const searchAll = action({
     searchDocuments: v.optional(v.boolean()),
     searchChunks: v.optional(v.boolean()),
     searchMemories: v.optional(v.boolean()),
+    // Original query text for keyword boosting
+    query: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 10;
-    const minScore = args.minScore ?? 0.5;
+    // Use 0.65 threshold like Supermemory for quality matches
+    const minScore = args.minScore ?? 0.65;
     const includeDocs = args.searchDocuments !== false;
     const includeChunks = args.searchChunks !== false;
     const includeMemories = args.searchMemories !== false;
@@ -341,19 +391,28 @@ export const searchAll = action({
         mem.is_latest !== false &&
         !mem.is_forgotten
       ) {
-        // Apply recency boost to score for consistent ranking with recall-service
+        // MINIMAL BOOSTS - Match Supermemory's pure cosine similarity approach
         let score = r._score;
+
+        // Tiny recency boost (3% max)
         const updatedAt = mem.updated_at || mem.created_at || 0;
         if (updatedAt > 0) {
           const now = Date.now();
           const ageInDays = Math.min(365, (now - updatedAt) / (1000 * 60 * 60 * 24));
-          // 50% recency boost: newer memories rank higher
-          const recencyBoost = 1.0 + (0.50 * (1 - ageInDays / 365));
-          score = Math.min(1.0, score * recencyBoost);
+          const recencyBoost = 1.0 + (0.03 * (1 - ageInDays / 365));
+          score = score * recencyBoost;
         }
-        // Boost for confirmed latest versions
+
+        // Tiny boost for confirmed latest versions (2%)
         if (mem.is_latest === true) {
-          score = Math.min(1.0, score * 1.3);
+          score = score * 1.02;
+        }
+
+        // Small keyword boost (5% max)
+        if (args.query && mem.content) {
+          const keywordBoost = calculateKeywordBoost(args.query, mem.content);
+          const adjustedBoost = 1.0 + (keywordBoost - 1.0) / 3;
+          score = score * adjustedBoost;
         }
 
         results.push({

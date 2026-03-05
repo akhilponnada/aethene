@@ -60,6 +60,7 @@ memories.post('/', async (c) => {
       const result = await extractAndSaveMemories(userId, memory.content.trim(), {
         forceIsCore: memory.isCore,
         metadata: memory.metadata || undefined,
+        containerTags: body.containerTag ? [body.containerTag] : undefined,
       });
 
       // Collect all created memories

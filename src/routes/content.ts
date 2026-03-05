@@ -60,6 +60,7 @@ content.post('/', async (c) => {
       customId: body.customId,
       contentType: serviceContentType as 'text' | 'url' | 'file',
       metadata: body.metadata,
+      containerTag: body.containerTag,
     });
 
     return c.json({

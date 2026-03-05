@@ -323,36 +323,15 @@ export async function searchMemories(
       memoryResults = memoryResults.filter(r => r.isLatest !== false);
     }
 
-    // Apply ranking boosts/penalties to ensure correct ordering:
-    // 1. Heavy penalty for is_latest=false (superseded memories)
-    // 2. Strong recency boost for newer memories
-    const now = Date.now();
+    // NOTE: Boosts are now applied in vectorSearch.ts to avoid double-boosting
+    // Only apply penalty for superseded versions here
     memoryResults = memoryResults.map(r => {
       let similarity = r.similarity;
 
       // PENALTY for superseded versions (is_latest=false)
       // Even if includeHistory=true, superseded memories should rank much lower
-      // This ensures that if both old ($5M) and new ($10M) revenue targets appear,
-      // the new one always ranks first
       if (r.isLatest === false) {
         similarity = similarity * 0.3;  // 70% penalty for superseded memories
-      }
-      // Boost for confirmed latest versions (is_latest=true explicitly set)
-      else if (r.isLatest === true) {
-        similarity = Math.min(1.0, similarity * 1.3);  // 30% boost for latest
-      }
-
-      // Recency boost: newer memories get up to 50% boost based on age
-      // This ensures that when two memories both have is_latest=true (contradiction not detected),
-      // the newer one ranks higher (e.g., $6.2M ranks above $5M for revenue target)
-      // Also helps when contradiction detection misses edge cases
-      const updatedAt = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
-      if (updatedAt > 0) {
-        // Calculate age in days (max 365 days for boost calculation)
-        const ageInDays = Math.min(365, (now - updatedAt) / (1000 * 60 * 60 * 24));
-        // Newer = higher boost: 1.50 for today, decaying to 1.0 for 365+ days old
-        const recencyBoost = 1.0 + (0.50 * (1 - ageInDays / 365));
-        similarity = Math.min(1.0, similarity * recencyBoost);
       }
 
       return { ...r, similarity };

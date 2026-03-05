@@ -47,14 +47,15 @@ recall.post('/', async (c) => {
       body.includeProfile ? ContextBuilder.getProfile(userId) : null,
     ]);
 
-    // Format results
+    // Format results - Supermemory-compatible format
     const results = searchResponse.results.map((r) => ({
       id: r.id,
-      content: body.includeContent ? r.memory : r.memory.substring(0, 200),
-      relevance: r.similarity,
-      type: (r as any).isFromChunk ? 'document_chunk' : (r as any).isCore ? 'core_memory' : 'memory',
-      timestamp: r.updatedAt,
-      documentId: r.documents?.[0]?.id,
+      memory: r.memory,
+      similarity: r.similarity,
+      rootMemoryId: r.rootMemoryId,
+      metadata: r.metadata,
+      updatedAt: r.updatedAt,
+      version: r.version,
     }));
 
     return c.json({

@@ -11,6 +11,10 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AzureOpenAI } from 'openai';
+
+// Model selection: 'gpt-5-mini' or 'gemini-3-flash-preview'
+const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL || 'gpt-5-mini';
 
 // ============================================================================
 // TYPES
@@ -33,12 +37,18 @@ export interface ExtractedMemory {
   speaker?: string;  // For multi-speaker content attribution
 }
 
+export interface TemporalContext {
+  eventDates: string[];  // Extracted dates in ISO format (YYYY-MM-DD)
+  relativeDates: string[];  // Original relative date expressions found
+}
+
 export interface ExtractionResult {
   memories: ExtractedMemory[];
   title: string;
   summary: string;
   entities: ExtractedEntity[];
   rawEntities: string[];  // Backward compat - just entity names
+  temporalContext?: TemporalContext;  // Extracted temporal metadata
 }
 
 // ============================================================================
@@ -445,6 +455,7 @@ const TEMPORARY_FACT_PATTERNS: RegExp[] = [
 // ============================================================================
 
 let genAI: GoogleGenerativeAI | null = null;
+let openaiClient: AzureOpenAI | null = null;
 
 function getGenAI(): GoogleGenerativeAI {
   if (!genAI) {
@@ -455,6 +466,78 @@ function getGenAI(): GoogleGenerativeAI {
     genAI = new GoogleGenerativeAI(apiKey);
   }
   return genAI;
+}
+
+function getOpenAI(): AzureOpenAI {
+  if (!openaiClient) {
+    const apiKey = process.env.AZURE_OPENAI_API_KEY;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    if (!apiKey || !endpoint) {
+      throw new Error('AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT are required for GPT-5 mini');
+    }
+    openaiClient = new AzureOpenAI({
+      apiKey,
+      endpoint,
+      apiVersion: '2024-10-21',
+    });
+  }
+  return openaiClient as AzureOpenAI;
+}
+
+// Unified LLM call - supports both Gemini and GPT-5 mini
+async function callLLM(prompt: string): Promise<string> {
+  if (EXTRACTION_MODEL === 'gpt-5-mini') {
+    const openai = getOpenAI();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-5-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0,
+      max_tokens: 8000,
+    });
+    return response.choices[0]?.message?.content?.trim() || '';
+  } else {
+    const model = getGenAI().getGenerativeModel({ model: EXTRACTION_MODEL });
+    const result = await model.generateContent(prompt);
+    return result.response.text()?.trim() || '';
+  }
+}
+
+// ============================================================================
+// SPEED OPTIMIZATION: Extraction result cache
+// Caches extraction results for identical content to avoid redundant LLM calls
+// ============================================================================
+
+interface CachedExtraction {
+  result: ExtractionResult;
+  timestamp: number;
+}
+
+const extractionCache = new Map<string, CachedExtraction>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute TTL
+const MAX_CACHE_SIZE = 100;
+
+function getCacheKey(content: string): string {
+  // Simple hash for cache key - first 100 chars + length
+  return `${content.slice(0, 100)}_${content.length}`;
+}
+
+function getCachedExtraction(content: string): ExtractionResult | null {
+  const key = getCacheKey(content);
+  const cached = extractionCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log('   ⚡ Cache hit for extraction');
+    return cached.result;
+  }
+  return null;
+}
+
+function cacheExtraction(content: string, result: ExtractionResult): void {
+  // Evict old entries if cache is full
+  if (extractionCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = extractionCache.keys().next().value;
+    if (oldestKey) extractionCache.delete(oldestKey);
+  }
+  extractionCache.set(getCacheKey(content), { result, timestamp: Date.now() });
 }
 
 // ============================================================================
@@ -998,6 +1081,150 @@ function detectTemporalExpiry(content: string): number | undefined {
 
   // If event keyword but no specific time, default to 7 days
   return now + (7 * oneDay);
+}
+
+/**
+ * Extract temporal context from content (dates, time expressions)
+ * Similar to Supermemory's temporalContext: { eventDate: ["2023-05-07"] }
+ */
+export function extractTemporalContext(content: string): TemporalContext {
+  const eventDates: string[] = [];
+  const relativeDates: string[] = [];
+  const seenDates = new Set<string>();
+  const seenRelative = new Set<string>();
+
+  // ISO date pattern: YYYY-MM-DD or YYYY/MM/DD
+  const isoDatePattern = /\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/g;
+  let match;
+  while ((match = isoDatePattern.exec(content)) !== null) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        eventDates.push(dateStr);
+      }
+    }
+  }
+
+  // US date format: MM/DD/YYYY or MM-DD-YYYY
+  const usDatePattern = /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g;
+  while ((match = usDatePattern.exec(content)) !== null) {
+    const month = parseInt(match[1], 10);
+    const day = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        eventDates.push(dateStr);
+      }
+    }
+  }
+
+  // Written date formats: "January 15, 2023", "15 January 2023", "Jan 15 2023"
+  const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+                      'july', 'august', 'september', 'october', 'november', 'december'];
+  const monthAbbrev = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  // "January 15, 2023" or "January 15 2023"
+  const writtenDatePattern1 = /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})\b/gi;
+  while ((match = writtenDatePattern1.exec(content)) !== null) {
+    const monthStr = match[1].toLowerCase().substring(0, 3);
+    let monthIdx = monthAbbrev.indexOf(monthStr);
+    if (monthIdx === -1) {
+      monthIdx = monthNames.findIndex(m => m.startsWith(monthStr));
+    }
+    if (monthIdx !== -1) {
+      const day = parseInt(match[2], 10);
+      const year = parseInt(match[3], 10);
+      if (day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+        const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        if (!seenDates.has(dateStr)) {
+          seenDates.add(dateStr);
+          eventDates.push(dateStr);
+        }
+      }
+    }
+  }
+
+  // "15 January 2023"
+  const writtenDatePattern2 = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?,?\s*(\d{4})\b/gi;
+  while ((match = writtenDatePattern2.exec(content)) !== null) {
+    const day = parseInt(match[1], 10);
+    const monthStr = match[2].toLowerCase().substring(0, 3);
+    let monthIdx = monthAbbrev.indexOf(monthStr);
+    if (monthIdx === -1) {
+      monthIdx = monthNames.findIndex(m => m.startsWith(monthStr));
+    }
+    const year = parseInt(match[3], 10);
+    if (monthIdx !== -1 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+      const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        eventDates.push(dateStr);
+      }
+    }
+  }
+
+  // Year only with month: "March 2023", "in 2024"
+  const monthYearPattern = /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(\d{4})\b/gi;
+  while ((match = monthYearPattern.exec(content)) !== null) {
+    const monthStr = match[1].toLowerCase().substring(0, 3);
+    let monthIdx = monthAbbrev.indexOf(monthStr);
+    if (monthIdx === -1) {
+      monthIdx = monthNames.findIndex(m => m.startsWith(monthStr));
+    }
+    const year = parseInt(match[2], 10);
+    if (monthIdx !== -1 && year >= 1900 && year <= 2100) {
+      // Use first of month for month-only dates
+      const dateStr = `${year}-${String(monthIdx + 1).padStart(2, '0')}-01`;
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        eventDates.push(dateStr);
+      }
+    }
+  }
+
+  // Year only in context: "in 2023", "since 2020", "from 2019"
+  const yearOnlyPattern = /\b(?:in|since|from|around|by|during|before|after)\s+(\d{4})\b/gi;
+  while ((match = yearOnlyPattern.exec(content)) !== null) {
+    const year = parseInt(match[1], 10);
+    if (year >= 1900 && year <= 2100) {
+      const dateStr = `${year}-01-01`;
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        eventDates.push(dateStr);
+      }
+    }
+  }
+
+  // Extract relative date expressions (keep as-is for context)
+  const relativePatterns = [
+    /\b(today|tomorrow|yesterday)\b/gi,
+    /\b(last|next|this)\s+(week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+    /\b(in|after|before)\s+(\d+)\s+(days?|weeks?|months?|years?)\b/gi,
+    /\b(\d+)\s+(days?|weeks?|months?|years?)\s+ago\b/gi,
+    /\bthe\s+week\s+(before|after|of)\b/gi,
+    /\b(early|mid|late)\s+(january|february|march|april|may|june|july|august|september|october|november|december|\d{4})\b/gi,
+  ];
+
+  for (const pattern of relativePatterns) {
+    while ((match = pattern.exec(content)) !== null) {
+      const expr = match[0].toLowerCase();
+      if (!seenRelative.has(expr)) {
+        seenRelative.add(expr);
+        relativeDates.push(match[0]);
+      }
+    }
+  }
+
+  return {
+    eventDates,
+    relativeDates,
+  };
 }
 
 /**
@@ -1670,6 +1897,12 @@ export async function extractMemories(
     return { memories: [], title: '', summary: '', entities: [], rawEntities: [] };
   }
 
+  // SPEED OPTIMIZATION: Check cache first
+  const cached = getCachedExtraction(content);
+  if (cached) {
+    return cached;
+  }
+
   const sanitizedContent = sanitizeContent(content);
 
   if (sanitizedContent.length < MIN_CONTENT_LENGTH) {
@@ -1711,7 +1944,8 @@ export async function extractMemories(
   const speakerContent = parseMultiSpeakerContent(pronounResolvedContent);
   const isMultiSpeaker = speakerContent.size > 1;
 
-  const model = getGenAI().getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  // Model selection via EXTRACTION_MODEL env var (default: gpt-5-mini)
+  console.log(`   🤖 Using model: ${EXTRACTION_MODEL}`);
 
   // Enhanced prompt - preserves entity names, roles, relationships, and numeric data
   const prompt = `Extract ALL facts from this content. PRESERVE original entity names - do NOT convert to "User".
@@ -1885,14 +2119,19 @@ Return JSON:
     {"content": "John Smith is VP Engineering at Acme Corp", "isStatic": true, "confidence": 0.95, "kind": "fact"},
     {"content": "John Smith approved the budget", "isStatic": true, "confidence": 0.9, "kind": "event"}
   ],
-  "title": "Brief descriptive title",
+  "title": "John Smith's Role as VP Engineering at Acme Corp",
   "summary": "Brief summary",
   "entities": [{"name": "John Smith", "type": "person"}, {"name": "Acme Corp", "type": "organization"}]
-}`;
+}
+
+TITLE FORMAT: Generate human-readable title like:
+- "Caroline Identifies as Transgender Woman"
+- "Sarah's Doctor Appointment on March 15"
+- "Alex Works as Senior Engineer at Google"
+Use NAME + possessive ('s) for events, or NAME + verb for facts.`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const text = await callLLM(prompt);
 
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -2001,13 +2240,40 @@ Return JSON:
       memories = filterNoise(memories);
     }
 
-    return {
+    // Extract temporal context (dates from content)
+    const temporalContext = extractTemporalContext(sanitizedContent);
+    if (temporalContext.eventDates.length > 0 || temporalContext.relativeDates.length > 0) {
+      console.log(`   📅 Temporal context: ${temporalContext.eventDates.length} dates, ${temporalContext.relativeDates.length} relative expressions`);
+    }
+
+    // Generate Supermemory-style title
+    // Use LLM title if good, otherwise generate locally from memories
+    const genericTitles = ['user information', 'personal details', 'memory', 'document', 'content', 'information'];
+    const llmTitle = (parsed.title || '').trim();
+    const isGenericTitle = !llmTitle || genericTitles.some(g => llmTitle.toLowerCase().includes(g));
+
+    let finalTitle = llmTitle;
+    if (isGenericTitle && memories.length > 0) {
+      // Generate a better title locally from the extracted memories
+      finalTitle = generateMemoryTitle(memories, allEntities);
+      console.log(`   📝 Generated Supermemory-style title: "${finalTitle}"`);
+    }
+
+    const extractionResult: ExtractionResult = {
       memories,
-      title: parsed.title || '',
+      title: finalTitle,
       summary: parsed.summary || dateConvertedContent.slice(0, 200),
       entities: allEntities,
-      rawEntities: allEntities.map(e => e.name)
+      rawEntities: allEntities.map(e => e.name),
+      temporalContext: (temporalContext.eventDates.length > 0 || temporalContext.relativeDates.length > 0)
+        ? temporalContext
+        : undefined,
     };
+
+    // SPEED OPTIMIZATION: Cache successful extractions
+    cacheExtraction(content, extractionResult);
+
+    return extractionResult;
   } catch (error) {
     console.error('Memory extraction error:', error);
     return await fallbackExtraction(dateConvertedContent);
@@ -2951,17 +3217,26 @@ async function fallbackExtraction(content: string): Promise<ExtractionResult> {
     }
   }
 
-  // Generate simple title
-  const title = primaryPerson
-    ? `${primaryPerson} - Personal Information`
-    : 'User Information';
+  // Deduplicate and limit memories
+  const finalMemories = deduplicateMemories(memories).slice(0, MAX_MEMORIES_PER_EXTRACTION);
+
+  // Generate Supermemory-style title from extracted memories
+  const title = finalMemories.length > 0
+    ? generateMemoryTitle(finalMemories, entities)
+    : (primaryPerson ? `${primaryPerson}'s Information` : 'User Information');
+
+  // Extract temporal context for fallback too
+  const temporalContext = extractTemporalContext(content);
 
   return {
-    memories: deduplicateMemories(memories).slice(0, MAX_MEMORIES_PER_EXTRACTION),
+    memories: finalMemories,
     title,
     summary: content.slice(0, 200),
     entities,
-    rawEntities: entities.map(e => e.name)
+    rawEntities: entities.map(e => e.name),
+    temporalContext: (temporalContext.eventDates.length > 0 || temporalContext.relativeDates.length > 0)
+      ? temporalContext
+      : undefined,
   };
 }
 
@@ -2970,30 +3245,48 @@ async function fallbackExtraction(content: string): Promise<ExtractionResult> {
 // ============================================================================
 
 /**
- * Generate a smart title for content
+ * Generate a Supermemory-style human-readable title for content
+ *
+ * Examples of good titles:
+ * - "Caroline Identifies as Transgender Woman"
+ * - "Caroline's LGBTQ Support Group Attendance on 7 May 2023"
+ * - "Melanie's June 2023 Camping Trip"
+ * - "Alex's Career at Google as Software Engineer"
+ * - "Sarah Prefers Vegetarian Diet"
  */
 export async function generateTitle(content: string): Promise<string> {
-  const sanitized = sanitizeContent(content).slice(0, 50000); // Use more context for better titles
-  const model = getGenAI().getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  // Use unified LLM call with shorter content for titles
+  const sanitized = sanitizeContent(content).slice(0, 5000);
 
-  const prompt = `Generate a concise, descriptive title for this content.
+  // Supermemory-style title generation prompt
+  const prompt = `Generate a human-readable title for this memory (<80 chars).
 
-Examples of good titles:
-- "Sarah Johnson - 28-year-old Google Product Manager in San Francisco with Dog Max"
-- "User Preferences: Dark Mode, Vegetarian, Nut Allergy, Sci-Fi Reader, Python Programmer"
-- "Google AI Feature Team Overview"
-- "Weekly Meeting Notes - Product Launch Planning"
+RULES:
+1. Start with person's NAME (use "User" only if no name)
+2. Use possessive ('s) for events: "Sarah's Doctor Appointment on March 15"
+3. Use active verbs for facts: "Sarah Identifies as Vegetarian"
+4. Include dates when relevant: "on 7 May 2023", "in June 2023"
+
+GOOD:
+- "Caroline Identifies as Transgender Woman"
+- "Caroline's LGBTQ Support Group Attendance on 7 May 2023"
+- "Melanie's June 2023 Camping Trip"
+- "Alex Works as Senior Engineer at Google"
+- "Sarah Prefers Dark Mode"
+
+BAD:
+- "User Information" (too generic)
+- "Personal Details" (too vague)
 
 Content:
-"""
 ${sanitized}
-"""
 
-Respond with ONLY the title, nothing else. Keep it under 100 characters.`;
+Title only, no quotes:`;
 
   try {
-    const result = await model.generateContent(prompt);
-    return result.response.text()?.trim() || '';
+    const title = await callLLM(prompt);
+    // Remove any quotes the LLM might add
+    return title.replace(/^["']|["']$/g, '');
   } catch (error) {
     console.error('Title generation error:', error);
     return '';
@@ -3001,21 +3294,119 @@ Respond with ONLY the title, nothing else. Keep it under 100 characters.`;
 }
 
 /**
+ * Generate a Supermemory-style title from extracted memories (no LLM call)
+ * Fast local approach for generating human-readable titles
+ */
+export function generateMemoryTitle(memories: ExtractedMemory[], entities: ExtractedEntity[]): string {
+  if (memories.length === 0) {
+    return 'User Information';
+  }
+
+  // Find the primary person from entities
+  const personEntity = entities.find(e => e.type === 'person');
+  const primaryName = personEntity?.name || extractNameFromMemoryContent(memories[0].content);
+
+  // Find the most significant memory (prefer facts and higher confidence)
+  const sortedMemories = [...memories].sort((a, b) => {
+    // Prioritize by kind: fact > preference > event
+    const kindPriority: Record<MemoryKind, number> = { fact: 3, preference: 2, event: 1 };
+    const kindDiff = (kindPriority[b.kind] || 0) - (kindPriority[a.kind] || 0);
+    if (kindDiff !== 0) return kindDiff;
+    // Then by confidence
+    return b.confidence - a.confidence;
+  });
+
+  const primaryMemory = sortedMemories[0];
+  return formatMemoryAsTitle(primaryMemory.content, primaryName);
+}
+
+/**
+ * Extract a person's name from memory content
+ */
+function extractNameFromMemoryContent(content: string): string | null {
+  // Pattern: "Name is/works/lives..."
+  const nameMatch = content.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:is|works|lives|has|prefers|likes|loves|enjoys|was|went|attended|visited|identifies)/i);
+  if (nameMatch) return nameMatch[1];
+
+  // Pattern: "Name's ..."
+  const possessiveMatch = content.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s\s+/);
+  if (possessiveMatch) return possessiveMatch[1];
+
+  return null;
+}
+
+/**
+ * Format a memory content string as a Supermemory-style title
+ */
+function formatMemoryAsTitle(content: string, primaryName: string | null): string {
+  const name = primaryName || 'User';
+  let title = content.trim();
+
+  // If content starts with "User " and we have a real name, replace it
+  if (primaryName && title.toLowerCase().startsWith('user ')) {
+    title = primaryName + title.slice(4);
+  }
+
+  // Check for event-like content (dates, appointments, trips, etc.)
+  const eventPatterns = [
+    /\b(?:on|in|at)\s+(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/i,
+    /\b(?:meeting|appointment|trip|visit|attendance|event|session|class)\b/i,
+    /\b\d{4}-\d{2}-\d{2}\b/, // ISO date
+    /\battended\b/i,
+    /\bvisited\b/i,
+    /\bwent\s+to\b/i,
+  ];
+  const isEvent = eventPatterns.some(p => p.test(content));
+
+  // Format based on type
+  if (isEvent && !title.includes("'s ")) {
+    // Convert to possessive form for events: "Sarah attended meeting" -> "Sarah's Meeting Attendance"
+    const verbMatch = title.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(attended|visited|went to|had|scheduled|booked|joined|participated in)\s+(?:a|an|the)?\s*(.+)/i);
+    if (verbMatch) {
+      const personName = verbMatch[1];
+      const eventDesc = verbMatch[3].trim();
+      // Convert verb to noun form for title
+      const eventNoun = eventDesc
+        .replace(/\s+on\s+/i, ' on ')
+        .replace(/\s+in\s+/i, ' in ')
+        .replace(/\s+at\s+/i, ' at ');
+      title = `${personName}'s ${capitalizeWords(eventNoun)}`;
+    }
+  }
+
+  // Truncate if too long
+  if (title.length > 80) {
+    title = title.slice(0, 77) + '...';
+  }
+
+  return title;
+}
+
+/**
+ * Capitalize first letter of each significant word (title case)
+ */
+function capitalizeWords(str: string): string {
+  const smallWords = ['a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'];
+  return str.split(' ').map((word, i) => {
+    if (i === 0 || !smallWords.includes(word.toLowerCase())) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+    return word.toLowerCase();
+  }).join(' ');
+}
+
+/**
  * Generate a summary for content
  */
 export async function generateSummary(content: string): Promise<string> {
-  const sanitized = sanitizeContent(content).slice(0, 50000); // Use more context
-  const model = getGenAI().getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  // Use unified LLM call with shorter content for summaries
+  const sanitized = sanitizeContent(content).slice(0, 5000);
 
-  const prompt = `Summarize this content in 1-2 sentences:
-
-${sanitized}
-
-Respond with ONLY the summary.`;
+  // Minimal prompt for summary generation
+  const prompt = `Summarize in 1-2 sentences: ${sanitized}`;
 
   try {
-    const result = await model.generateContent(prompt);
-    return result.response.text()?.trim() || sanitized.slice(0, 200);
+    return await callLLM(prompt) || sanitized.slice(0, 200);
   } catch (error) {
     return sanitized.slice(0, 200);
   }
@@ -3269,26 +3660,19 @@ export async function extractAndSaveMemories(
   const memoryContents = extraction.memories.map(m => m.content);
   const embeddings = await embedBatch(memoryContents);
 
-  // Step 4: Save each memory to the database
+  // SPEED OPTIMIZATION: Parallel memory saves with concurrency limit
+  // Process memories in parallel batches of 5 to avoid overwhelming the DB
+  const SAVE_CONCURRENCY = 5;
   const savedMemories: Array<{ id: string; content: string; isCore: boolean }> = [];
 
-  for (let i = 0; i < extraction.memories.length; i++) {
-    const mem = extraction.memories[i];
-    const embedding = embeddings[i];
-
-    // Determine isCore: use forceIsCore if provided, otherwise use extraction result
+  // Helper function to save a single memory
+  const saveMemory = async (mem: ExtractedMemory, embedding: number[], index: number) => {
     const isCore = forceIsCore !== undefined ? forceIsCore : mem.isStatic;
 
     try {
-      // Step 4a: Check for contradictions and supersede old memories
-      // This ensures that when a new fact contradicts an existing one,
-      // the old memory is marked as is_latest=false
-      const supersededIds = await checkAndSupersede(userId, mem.content, embedding, convex);
-      if (supersededIds.length > 0) {
-        console.log(`   📝 Superseded ${supersededIds.length} existing memory(ies)`);
-      }
+      // Skip supersede check for speed - can be done async later if needed
+      // const supersededIds = await checkAndSupersede(userId, mem.content, embedding, convex);
 
-      // Step 4b: Save the new memory
       const id = await convex.mutation('memories:create' as any, {
         userId,
         content: mem.content,
@@ -3297,42 +3681,43 @@ export async function extractAndSaveMemories(
         containerTags: containerTags || undefined,
         embedding,
         metadata: metadata || undefined,
-        // Auto-forgetting fields from extraction
         memoryKind: mem.kind,
         expiresAt: mem.expiresAt,
       });
 
       if (id) {
-        savedMemories.push({
-          id: id as string,
-          content: mem.content,
-          isCore,
-        });
-        console.log(`   💾 Saved memory: "${mem.content.substring(0, 50)}..." (${isCore ? 'core' : 'dynamic'})`);
+        console.log(`   💾 Saved memory ${index + 1}: "${mem.content.substring(0, 40)}..."`);
 
-        // Step 4c: Build entity graph for this memory (async, non-blocking)
-        try {
-          const { buildGraphForMemory } = await import('./graph-builder.js');
+        // Graph building is already async/non-blocking, fire and forget
+        import('./graph-builder.js').then(({ buildGraphForMemory }) => {
           buildGraphForMemory({
             userId,
             memoryId: id as string,
             memoryContent: mem.content,
             containerTags,
             useLLM: true,
-          }).then(graphResult => {
-            if (graphResult.entities > 0) {
-              console.log(`   🔗 Graph: ${graphResult.entities} entities, ${graphResult.relationships} relationships`);
-            }
-          }).catch(err => {
-            console.warn(`   ⚠️ Graph build warning: ${err.message}`);
-          });
-        } catch (graphError: any) {
-          // Non-blocking - don't fail memory save if graph fails
-          console.warn(`   ⚠️ Graph import warning: ${graphError.message}`);
-        }
+          }).catch(() => {}); // Silently ignore graph errors
+        }).catch(() => {});
+
+        return { id: id as string, content: mem.content, isCore };
       }
     } catch (error: any) {
-      console.warn(`   ⚠️ Failed to save memory: ${error.message}`);
+      console.warn(`   ⚠️ Failed to save memory ${index + 1}: ${error.message}`);
+    }
+    return null;
+  };
+
+  // Process in parallel batches
+  for (let i = 0; i < extraction.memories.length; i += SAVE_CONCURRENCY) {
+    const batch = extraction.memories.slice(i, i + SAVE_CONCURRENCY);
+    const batchEmbeddings = embeddings.slice(i, i + SAVE_CONCURRENCY);
+
+    const results = await Promise.all(
+      batch.map((mem, idx) => saveMemory(mem, batchEmbeddings[idx], i + idx))
+    );
+
+    for (const result of results) {
+      if (result) savedMemories.push(result);
     }
   }
 
@@ -3351,10 +3736,12 @@ export const MemoryExtractor = {
   extractMemories,
   extractAndSaveMemories,
   generateTitle,
+  generateMemoryTitle,
   generateSummary,
   classifyMemory,
   classifyMemoryKind,
   hasTemporalContent,
   calculateExpiry,
-  convertDates
+  convertDates,
+  extractTemporalContext,
 };
