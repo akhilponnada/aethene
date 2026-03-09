@@ -50,9 +50,13 @@ export const getMemoriesByContainerTag = internalQuery({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 500;
+    // CRITICAL: Order by desc to get most recent memories first
+    // This ensures new memories with containerTags are found even when
+    // there are many older memories without tags
     const memories = await ctx.db
       .query("memories")
       .withIndex("by_user", (q) => q.eq("user_id", args.userId))
+      .order("desc")
       .take(limit);
 
     const filtered = memories.filter((m: any) => {
@@ -61,7 +65,7 @@ export const getMemoriesByContainerTag = internalQuery({
       const tags = m.container_tags || [];
       return tags.includes(args.containerTag);
     });
-    
+
     console.log("[DEBUG] getMemoriesByContainerTag:", args.containerTag, "found", filtered.length, "of", memories.length);
     return filtered;
   },

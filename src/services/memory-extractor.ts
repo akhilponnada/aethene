@@ -823,10 +823,24 @@ function convertRelativeDates(text: string, referenceDate: Date): string {
   // PATTERN 5b: Standalone "Monday/Tuesday/..." (without next/this/last prefix)
   // Assumes the upcoming occurrence of that day
   // Example: "keynote is Tuesday at 9am" -> "keynote is 2026-02-24 at 09:00 UTC"
+  // SKIP: "the Sunday before May 25th" - preserve relative expressions with "before/after"
   // ═══════════════════════════════════════════════════════════════════════════
   result = result.replace(
     /\b(?<!next\s)(?<!this\s)(?<!last\s)(?:on\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(\s*)(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?/gi,
-    (match, dayName, trailingSpace, time) => {
+    (match, dayName, trailingSpace, time, offset) => {
+      // CRITICAL: Check if this is part of a relative date expression like "the Sunday before May 25th"
+      // Look at surrounding context to detect "before" or "after" patterns
+      const afterMatch = result.slice(offset + match.length, offset + match.length + 30);
+      if (/^\s*(before|after)\s+/i.test(afterMatch)) {
+        return match; // Preserve the original - don't convert
+      }
+
+      // Also check for "the [day] before/after" pattern by looking at what comes before
+      const beforeContext = result.slice(Math.max(0, offset - 10), offset);
+      if (/\bthe\s*$/i.test(beforeContext) && /^\s*(before|after)\s+/i.test(afterMatch)) {
+        return match; // Preserve "the Sunday before..." patterns
+      }
+
       const targetDayIndex = DAY_NAMES.indexOf(dayName.toLowerCase());
       if (targetDayIndex === -1) return match;
 
