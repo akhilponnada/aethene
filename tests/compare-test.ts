@@ -102,30 +102,30 @@ async function testSupermemory(): Promise<number> {
   console.log('Ingesting...');
   for (const fact of FACTS) {
     try {
-      await fetch(`${SUPERMEMORY_URL}/v3/memories`, {
+      await fetch(`${SUPERMEMORY_URL}/v3/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPERMEMORY_KEY}` },
-        body: JSON.stringify({ content: fact, containerTags: [TAG] })
+        body: JSON.stringify({ content: fact, containerTag: TAG })
       });
     } catch (e) {
       // Continue
     }
   }
 
-  console.log('Waiting 10s for processing...');
-  await sleep(10000);
+  console.log('Waiting 15s for processing...');
+  await sleep(15000);
 
   // Test
   let correct = 0;
   for (const test of QUESTIONS) {
     try {
-      const resp = await fetch(`${SUPERMEMORY_URL}/v4/search`, {
+      const resp = await fetch(`${SUPERMEMORY_URL}/v3/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPERMEMORY_KEY}` },
-        body: JSON.stringify({ q: test.q, containerTags: [TAG], limit: 5 })
+        body: JSON.stringify({ q: test.q, containerTags: [TAG] })
       });
       const data = await resp.json();
-      const context = data.results?.map((r: any) => r.memory).join(' ') || '';
+      const context = data.results?.flatMap((r: any) => r.chunks?.map((c: any) => c.content) || []).join(' ') || '';
       const match = checkMatch(context, test.expected);
       if (match) correct++;
       console.log(`${match ? '✅' : '❌'} ${test.q} → ${test.expected}`);

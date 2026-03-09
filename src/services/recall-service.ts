@@ -285,6 +285,13 @@ export async function searchMemories(
       searchQuery = `${searchQuery} date month year January February March`;
     }
 
+    // AGGREGATION QUERY DETECTION: Questions asking for multiple items need higher limits
+    // "What activities/hobbies/things does X do?" needs to find scattered memories
+    const isAggregationQuery = /what\s+(activities|hobbies|things|interests|skills|places|books|movies|foods?|sports?)\s+(does|did|has|is)/i.test(query.trim()) ||
+                               /what\s+(all|are\s+all|are\s+the)\s+/i.test(query.trim()) ||
+                               /list\s+(all|the)\s+/i.test(query.trim());
+    const effectiveLimit = isAggregationQuery ? Math.max(limit, 15) : limit;
+
     // Generate query embedding (with caching for faster repeated queries)
     const embedding = await getCachedEmbedding(searchQuery);
 
@@ -292,9 +299,9 @@ export async function searchMemories(
     const metadataFilters = filters ? extractMetadataFilters(filters) : undefined;
 
     // Run memory and chunk searches IN PARALLEL for faster results
-    const memorySearchPromise = vectorSearchMemories(client, userId, embedding, Math.min(limit * 2, 100), metadataFilters, containerTag);
+    const memorySearchPromise = vectorSearchMemories(client, userId, embedding, Math.min(effectiveLimit * 2, 100), metadataFilters, containerTag);
     const chunkSearchPromise = searchMode === 'hybrid'
-      ? vectorSearchChunks(client, userId, embedding, limit)
+      ? vectorSearchChunks(client, userId, embedding, effectiveLimit)
       : Promise.resolve([]);
 
     const [memorySearchResults, chunkResults] = await Promise.all([memorySearchPromise, chunkSearchPromise]);
