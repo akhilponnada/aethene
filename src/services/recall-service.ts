@@ -279,6 +279,12 @@ export async function searchMemories(
       searchQuery = await expandSearchQuery(query);
     }
 
+    // AUTO-EXPAND temporal queries: "When did X" → "When did X date month year"
+    // This helps vector search find memories with actual dates
+    if (/^when\s+(did|does|was|is|will)/i.test(query.trim())) {
+      searchQuery = `${searchQuery} date month year January February March`;
+    }
+
     // Generate query embedding (with caching for faster repeated queries)
     const embedding = await getCachedEmbedding(searchQuery);
 
@@ -805,13 +811,23 @@ const QUERY_INTENT_PATTERNS: Array<{
     negativeIndicators: [],
     weight: 0.20
   },
-  // Time/When queries
+  // Time/When queries - CRITICAL: boost memories with actual dates
   {
     pattern: /when\s+(did|does|is|was|will)/i,
     intentType: 'temporal',
-    positiveIndicators: ['in', 'on', 'at', 'during', 'ago', 'started', 'began', 'will', 'planning'],
-    negativeIndicators: [],
-    weight: 0.15
+    positiveIndicators: [
+      // Months
+      'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december',
+      // Date patterns
+      '2023', '2024', '2025', '2026',
+      // Temporal markers
+      'on ', 'in ', 'during', 'ago', 'started', 'began', 'lost', 'quit',
+      // Date format patterns
+      ', 20'  // catches ", 2023" etc
+    ],
+    negativeIndicators: ['is a', 'was a', 'works as', 'works at'],
+    weight: 0.40  // Higher weight for temporal queries
   },
   // Current state queries - "what is X doing", "how is X"
   {
