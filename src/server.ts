@@ -355,6 +355,10 @@ app.get('/', (c) => {
 // Apply auth and rate limiting to /v1/*
 app.use('/v1/*', globalRateLimiter);
 app.use('/v1/*', apiKeyAuth);
+app.use('/v3/*', globalRateLimiter);
+app.use('/v3/*', apiKeyAuth);
+app.use('/v4/*', globalRateLimiter);
+app.use('/v4/*', apiKeyAuth);
 
 // Memory operations
 app.route('/v1/memories', memoriesRoutes);
@@ -362,9 +366,11 @@ app.route('/v1/memories', memoriesRoutes);
 // Document operations (ingest, upload, process)
 app.route('/v1/content', contentRoutes);
 app.route('/v1/documents', documentsRoutes);
+app.route('/v3/documents', documentsRoutes);  // Supermemory v3 API compatibility
 
 // Search & Recall
 app.route('/v1/search', searchRoutes);
+app.route('/v4/search', searchRoutes);  // Supermemory v4 API compatibility
 app.route('/v1/recall', recallRoutes);
 
 // User data
