@@ -2137,7 +2137,13 @@ Output (TRAVEL STATS):
 
 CONTENT:
 ${pronounResolvedContent}
-
+${entityContext ? `
+ENTITY CONTEXT (use this to resolve "I", "me", "my" to the correct person):
+${entityContext}
+Note: When the content says "I" or "my", replace it with the person's name from the entity context.
+For example, if entity context says "Marcus Chen, travel blogger" and content says "I visited 47 countries",
+extract: "Marcus Chen visited 47 countries" (NOT "User visited...")
+` : ''}
 Return JSON:
 {
   "memories": [

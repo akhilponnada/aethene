@@ -304,11 +304,13 @@ async function main() {
 
   console.log('\n-> Ingesting to Aethene...');
   const aeIngestions: any[] = [];
+  // Entity context tells the LLM who "I" refers to - critical for name resolution
+  const entityContext = "Marcus Chen, travel blogger from Seattle. All first-person statements are from Marcus.";
   for (const fact of FACTS) {
     const resp = await fetch(`${AETHENE_URL}/v3/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': AETHENE_KEY },
-      body: JSON.stringify({ content: fact, containerTag: TAG })
+      body: JSON.stringify({ content: fact, containerTag: TAG, entityContext })
     });
     const data = await resp.json();
     aeIngestions.push(data);
