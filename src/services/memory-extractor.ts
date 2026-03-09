@@ -1952,7 +1952,10 @@ export async function extractMemories(
 
 CRITICAL RULES:
 1. PRESERVE NAMES: If someone is named (e.g., "John Smith"), use their name in facts, NOT "User"
-2. Only use "User" for first-person statements ("I am...", "My name is...") when no name is given
+2. SELF-INTRODUCTION: If someone says "My name is X" or "I'm X", use X for ALL subsequent facts about them
+   - "My name is Marcus Chen and I'm a travel blogger" → "Marcus Chen is a travel blogger" (NOT "User is...")
+   - "I'm Sarah and I work at Google" → "Sarah works at Google"
+3. Only use "User" when NO name is given at all (e.g., anonymous "I" statements with no name)
 3. PRESERVE ROLES & TITLES: Include job titles, positions (e.g., "VP Engineering", "Senior Developer")
 4. PRESERVE RELATIONSHIPS: Keep organizational relationships (e.g., "works at Acme Corp", "leads the team")
 5. EXTRACT ALL NUMBERS: Budgets, team sizes, dates, percentages, amounts, years of experience
@@ -2048,6 +2051,11 @@ Output:
 - "The budget is $2M" (isStatic: true, kind: "fact")
 - "The team has 15 people" (isStatic: true, kind: "fact")
 
+Input: "My name is Marcus Chen and I'm a travel blogger from Seattle."
+Output (name IS given, use the name):
+- "Marcus Chen is a travel blogger" (isStatic: true, kind: "fact")
+- "Marcus Chen is from Seattle" (isStatic: true, kind: "fact")
+
 Input: "I am a software engineer with 10 years experience in Python and Go"
 Output (no name given, use "User"):
 - "User is a software engineer" (isStatic: false, kind: "fact")
@@ -2109,6 +2117,23 @@ Input: "We met around Christmas 2021, just a few days before New Year's."
 Output (PRESERVE ALL DATE CONTEXT):
 - "User met someone around Christmas 2021" (isStatic: false, kind: "event")
 - "User met someone a few days before New Year's 2021" (isStatic: false, kind: "event")
+
+Input: "I earn about $15,000 per month from sponsored posts. I'm planning to visit Iceland in June 2026."
+Output (INCOME + FUTURE PLANS):
+- "User earns about $15,000 per month" (isStatic: false, kind: "fact")
+- "User earns income from sponsored posts" (isStatic: false, kind: "fact")
+- "User is planning to visit Iceland in June 2026" (isStatic: false, kind: "fact")
+
+Input: "I shoot with a Sony A7IV camera and DJI Mini 3 Pro drone."
+Output (EQUIPMENT):
+- "User shoots with a Sony A7IV camera" (isStatic: false, kind: "fact")
+- "User uses a DJI Mini 3 Pro drone" (isStatic: false, kind: "fact")
+
+Input: "I've visited 47 countries in the last 6 years. My favorite destination is Kyoto, Japan."
+Output (TRAVEL STATS):
+- "User has visited 47 countries" (isStatic: false, kind: "fact")
+- "User has visited 47 countries in the last 6 years" (isStatic: false, kind: "fact")
+- "User's favorite destination is Kyoto, Japan" (isStatic: false, kind: "fact")
 
 CONTENT:
 ${pronounResolvedContent}
