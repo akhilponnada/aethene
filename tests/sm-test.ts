@@ -3,7 +3,7 @@
  */
 const SM_API = 'https://api.supermemory.ai';
 const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
-const GEMINI = 'AIzaSyA22gt7KozJT6uM4RMq9zeqC-SdCUBZOTI';
+const GEMINI = 'process.env.GEMINI_API_KEY';
 const TAG = 'locomo_test_1772670362817';
 
 async function sm(endpoint: string, body: any) {

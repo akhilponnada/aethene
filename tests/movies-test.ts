@@ -5,7 +5,7 @@ const SM_API = 'https://api.supermemory.ai';
 const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
 const AETHENE_API = 'http://localhost:3006';
 const AETHENE_KEY = 'ae_dev_test123';
-const GEMINI = 'AIzaSyA22gt7KozJT6uM4RMq9zeqC-SdCUBZOTI';
+const GEMINI = 'process.env.GEMINI_API_KEY';
 const TAG = `movies_${Date.now()}`;
 
 // Movie facts about a fictional user

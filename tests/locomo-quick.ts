@@ -11,7 +11,7 @@ const __dirname = dirname(__filename);
 
 const AETHENE_URL = process.env.AETHENE_URL || 'http://localhost:3006';
 const API_KEY = process.env.AETHENE_API_KEY || 'ae_dev_test123';
-const GEMINI_KEY = process.env.GEMINI_API_KEY || 'AIzaSyA22gt7KozJT6uM4RMq9zeqC-SdCUBZOTI';
+const GEMINI_KEY = process.env.GEMINI_API_KEY || 'process.env.GEMINI_API_KEY';
 
 // F1 Score
 function f1(pred: string, truth: string): number {

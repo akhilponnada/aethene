@@ -1,6 +1,6 @@
 const AETHENE = 'http://localhost:3006';
 const KEY = 'ae_dev_test123';
-const GEMINI = 'AIzaSyA22gt7KozJT6uM4RMq9zeqC-SdCUBZOTI';
+const GEMINI = 'process.env.GEMINI_API_KEY';
 
 async function search(q: string) {
   const r = await fetch(`${AETHENE}/v1/search`, {

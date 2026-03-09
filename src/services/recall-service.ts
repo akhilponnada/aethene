@@ -541,6 +541,7 @@ async function vectorSearchMemories(
 ): Promise<MemoryResult[]> {
   try {
     // Use client.action() for Convex actions (not queries)
+    console.log("[DEBUG] vectorSearchMemories called with containerTag:", containerTag);
     const results = await client.action('vectorSearch:searchMemories' as any, {
       userId,
       embedding,
