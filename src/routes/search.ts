@@ -36,7 +36,8 @@ search.post('/', async (c) => {
   const body = await validateBody(c, SearchSchema);
 
   // SECURITY: Validate userId override to prevent IDOR attacks
-  const requestedUserId = body.containerTag || body.userId;
+  // containerTag is for filtering, NOT for userId resolution
+  const requestedUserId = body.userId;
   const userId = resolveUserId(c, requestedUserId);
   const containerTag = body.containerTag;
 
