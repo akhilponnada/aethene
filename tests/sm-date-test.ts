@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import Supermemory from 'supermemory';
 
-const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
+const SM_KEY = process.env.SUPERMEMORY_API_KEY || '';
 const AETHENE_URL = 'http://localhost:3006';
 const AETHENE_KEY = 'ae_dev_test123';
 

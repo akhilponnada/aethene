@@ -2,7 +2,7 @@
  * Work/Professional Test - SM vs Aethene
  */
 const SM_API = 'https://api.supermemory.ai';
-const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
+const SM_KEY = process.env.SUPERMEMORY_API_KEY || '';
 const AETHENE_API = 'http://localhost:3006';
 const AETHENE_KEY = 'ae_dev_test123';
 const GEMINI = 'process.env.GEMINI_API_KEY';

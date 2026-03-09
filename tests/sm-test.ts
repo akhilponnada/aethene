@@ -2,7 +2,7 @@
  * Supermemory LoCoMo Test - Search only (data already ingested)
  */
 const SM_API = 'https://api.supermemory.ai';
-const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
+const SM_KEY = process.env.SUPERMEMORY_API_KEY || '';
 const GEMINI = 'process.env.GEMINI_API_KEY';
 const TAG = 'locomo_test_1772670362817';
 

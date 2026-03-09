@@ -19,7 +19,7 @@ import Supermemory from 'supermemory';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Config
-const SM_KEY = 'sm_jUqfEvKttp8dGVup2x3eaF_WmqwSzZOkKZSrLWVVDacTCcBsXnrktoFyixCKuhTBIywSPeGgikyKaRYXnpyWPQX';
+const SM_KEY = process.env.SUPERMEMORY_API_KEY || '';
 const AETHENE_URL = 'http://localhost:3006';
 const AETHENE_KEY = 'ae_dev_test123';
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
