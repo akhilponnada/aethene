@@ -1,18 +1,34 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { hashApiKey } from "./security";
 
 /**
  * API Keys - Authentication and rate limiting
  */
 
+async function findApiKeyRecord(ctx: any, rawKey: string) {
+  const keyHash = await hashApiKey(rawKey);
+
+  const hashedRecord = await ctx.db
+    .query("api_keys")
+    .withIndex("by_key_hash", (q: any) => q.eq("key_hash", keyHash))
+    .first();
+
+  if (hashedRecord) {
+    return hashedRecord;
+  }
+
+  return ctx.db
+    .query("api_keys")
+    .withIndex("by_key", (q: any) => q.eq("key", rawKey))
+    .first();
+}
+
 // Get API key by key value (for authentication)
 export const getByKey = query({
   args: { key: v.string() },
   handler: async (ctx, args) => {
-    return ctx.db
-      .query("api_keys")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .first();
+    return findApiKeyRecord(ctx, args.key);
   },
 });
 
@@ -37,8 +53,10 @@ export const create = mutation({
     monthlyLimit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const keyHash = await hashApiKey(args.key);
+
     return ctx.db.insert("api_keys", {
-      key: args.key,
+      key_hash: keyHash,
       user_id: args.userId,
       name: args.name,
       rate_limit: args.rateLimit,
@@ -54,10 +72,7 @@ export const create = mutation({
 export const validate = query({
   args: { key: v.string() },
   handler: async (ctx, args) => {
-    const apiKey = await ctx.db
-      .query("api_keys")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .first();
+    const apiKey = await findApiKeyRecord(ctx, args.key);
 
     if (!apiKey) {
       return { valid: false, error: "Invalid API key" };
@@ -97,10 +112,7 @@ export const validate = query({
 export const incrementRequests = mutation({
   args: { key: v.string() },
   handler: async (ctx, args) => {
-    const apiKey = await ctx.db
-      .query("api_keys")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .first();
+    const apiKey = await findApiKeyRecord(ctx, args.key);
 
     if (apiKey) {
       await ctx.db.patch(apiKey._id, {
@@ -200,8 +212,11 @@ export const regenerate = mutation({
       throw new Error("API key not found");
     }
 
+    const keyHash = await hashApiKey(args.newKey);
+
     await ctx.db.patch(args.id, {
-      key: args.newKey,
+      key: undefined,
+      key_hash: keyHash,
       is_active: true,
       requests_this_month: 0,
       last_used_at: undefined,
@@ -231,6 +246,8 @@ export const createScopedKey = mutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const keyHash = await hashApiKey(args.key);
+
     // Validate permissions
     const validPermissions = ["read", "write", "delete", "admin"];
     for (const perm of args.permissions) {
@@ -245,7 +262,7 @@ export const createScopedKey = mutation({
     }
 
     return ctx.db.insert("api_keys", {
-      key: args.key,
+      key_hash: keyHash,
       user_id: args.userId,
       parent_user_id: args.parentUserId,  // Store parent for ownership checks
       name: args.name,

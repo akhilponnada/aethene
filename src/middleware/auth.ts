@@ -105,6 +105,109 @@ export function hasPermission(permissions: ApiKeyPermission[], required: ApiKeyP
   return permissions.includes(required);
 }
 
+function buildContainerAccessDeniedResponse(c: Context, requestedTag: string, allowedTags: string[]) {
+  return c.json({
+    success: false,
+    error: 'Forbidden',
+    message: `This API key does not have access to containerTag '${requestedTag}'`,
+    code: 'CONTAINER_ACCESS_DENIED',
+    allowedTags,
+  }, 403);
+}
+
+/**
+ * Normalize containerTag/containerTags input from JSON, query params, or form data.
+ */
+export function normalizeContainerTagInput(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return Array.from(
+      new Set(
+        input
+          .filter((value): value is string => typeof value === 'string')
+          .map(value => value.trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  if (typeof input !== 'string') {
+    return [];
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      return normalizeContainerTagInput(JSON.parse(trimmed));
+    } catch {
+      // Fall through and treat as a plain string.
+    }
+  }
+
+  if (trimmed.includes(',')) {
+    return Array.from(
+      new Set(
+        trimmed
+          .split(',')
+          .map(value => value.trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  return [trimmed];
+}
+
+/**
+ * Resolve container tags for the current request and enforce scoped-key restrictions.
+ */
+export function resolveRequestedContainerTags(
+  c: Context,
+  requested: unknown,
+  options: { defaultToFirstAllowed?: boolean } = {}
+): { containerTags: string[]; response: Response | null } {
+  const isScoped = c.get('isScoped') as boolean | undefined;
+  const allowedTags = c.get('containerTags') as string[] | undefined;
+  const requestedTags = normalizeContainerTagInput(requested);
+
+  if (!isScoped || !allowedTags || allowedTags.length === 0 || allowedTags.includes('*')) {
+    return { containerTags: requestedTags, response: null };
+  }
+
+  if (requestedTags.length === 0) {
+    if (options.defaultToFirstAllowed) {
+      return { containerTags: [allowedTags[0]], response: null };
+    }
+    return { containerTags: [], response: null };
+  }
+
+  const deniedTag = requestedTags.find(tag => !allowedTags.includes(tag));
+  if (deniedTag) {
+    return {
+      containerTags: [],
+      response: buildContainerAccessDeniedResponse(c, deniedTag, allowedTags),
+    };
+  }
+
+  return { containerTags: requestedTags, response: null };
+}
+
+/**
+ * Resolve a userId override while keeping scoped keys pinned to their scoped user namespace.
+ */
+export function resolveRequestedUserId(
+  c: Context,
+  requestedUserId?: string | null,
+  containerTagAsUserId?: string | null
+): string {
+  const isScoped = c.get('isScoped') as boolean | undefined;
+  const effectiveOverride = requestedUserId || (!isScoped ? containerTagAsUserId : undefined);
+  return resolveUserId(c, effectiveOverride);
+}
+
 // =============================================================================
 // MIDDLEWARE
 // =============================================================================
@@ -272,49 +375,20 @@ export function requirePermission(permission: ApiKeyPermission) {
  * app.post('/v3/documents', apiKeyAuth, validateContainerAccess, handler);
  */
 export async function validateContainerAccess(c: Context, next: Next) {
-  const isScoped = c.get('isScoped');
-  const allowedTags = c.get('containerTags') as string[] | undefined;
+  let requestedTags: unknown = c.req.query('containerTag') || null;
 
-  // Non-scoped keys have full access
-  if (!isScoped || !allowedTags || allowedTags.length === 0) {
-    await next();
-    return;
-  }
-
-  // Try to extract containerTag from request
-  let requestedTag: string | null = null;
-
-  // Check query params first
-  requestedTag = c.req.query('containerTag') || null;
-
-  // Check body for POST/PATCH requests
-  if (!requestedTag && ['POST', 'PATCH', 'PUT'].includes(c.req.method)) {
+  if (!requestedTags && ['POST', 'PATCH', 'PUT'].includes(c.req.method)) {
     try {
-      const body = await c.req.json();
-      requestedTag = body.containerTag || body.containerTags?.[0] || null;
-      // Re-parse body since we consumed it - store in context for handlers
-      c.set('parsedBody', body);
+      const body = await c.req.raw.clone().json() as Record<string, unknown>;
+      requestedTags = body.containerTags ?? body.containerTag ?? null;
     } catch {
       // Body parsing failed or no body
     }
   }
 
-  // If no containerTag in request but key is scoped, default to first allowed tag
-  if (!requestedTag && allowedTags.length > 0) {
-    // Allow the request but note that responses will be filtered
-    await next();
-    return;
-  }
-
-  // Validate access
-  if (requestedTag && !isContainerTagAllowed(allowedTags, requestedTag)) {
-    return c.json({
-      success: false,
-      error: 'Forbidden',
-      message: `This API key does not have access to containerTag '${requestedTag}'`,
-      code: 'CONTAINER_ACCESS_DENIED',
-      allowedTags,
-    }, 403);
+  const { response } = resolveRequestedContainerTags(c, requestedTags);
+  if (response) {
+    return response;
   }
 
   await next();

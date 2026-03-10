@@ -16,8 +16,8 @@ import type * as entities from "../entities.js";
 import type * as memories from "../memories.js";
 import type * as memoryLinks from "../memoryLinks.js";
 import type * as memoryOps from "../memoryOps.js";
+import type * as security from "../security.js";
 import type * as settings from "../settings.js";
-import type * as testQuery from "../testQuery.js";
 import type * as vectorSearch from "../vectorSearch.js";
 
 import type {
@@ -35,8 +35,8 @@ declare const fullApi: ApiFromModules<{
   memories: typeof memories;
   memoryLinks: typeof memoryLinks;
   memoryOps: typeof memoryOps;
+  security: typeof security;
   settings: typeof settings;
-  testQuery: typeof testQuery;
   vectorSearch: typeof vectorSearch;
 }>;
 

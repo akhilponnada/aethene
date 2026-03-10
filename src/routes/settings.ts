@@ -14,6 +14,7 @@ import {
   internalError,
   validationError,
 } from '../utils/errors.js';
+import { resolveRequestedContainerTags } from '../middleware/auth.js';
 import { query, mutation } from '../database/convex.js';
 
 const settingsRoutes = new Hono<AppEnv>();
@@ -168,11 +169,15 @@ settingsRoutes.get('/', async (c) => {
   }
 
   const { containerTag } = parsed.data;
+  const { containerTags, response } = resolveRequestedContainerTags(c, containerTag);
+  if (response) {
+    return response;
+  }
 
   try {
     const settings = await query<SettingsRecord | null>('settings:getByUser', {
       userId,
-      containerTag,
+      containerTag: containerTags[0],
     });
 
     return c.json(formatSettingsResponse(settings));
@@ -246,10 +251,27 @@ settingsRoutes.patch('/', async (c) => {
     return validationError(c, 'At least one setting field must be provided');
   }
 
+  const isUpdatingConnectorSecret =
+    body.googleDriveClientSecret !== undefined ||
+    body.notionClientSecret !== undefined ||
+    body.onedriveClientSecret !== undefined;
+
+  if (isUpdatingConnectorSecret && !process.env.SETTINGS_ENCRYPTION_KEY) {
+    return validationError(
+      c,
+      'SETTINGS_ENCRYPTION_KEY must be configured before storing connector secrets'
+    );
+  }
+
+  const { containerTags, response } = resolveRequestedContainerTags(c, body.containerTag);
+  if (response) {
+    return response;
+  }
+
   try {
     const updated = await mutation<SettingsRecord>('settings:upsert', {
       userId,
-      containerTag: body.containerTag,
+      containerTag: containerTags[0],
       shouldLLMFilter: body.shouldLLMFilter,
       filterPrompt: body.filterPrompt,
       chunkSize: body.chunkSize,
@@ -288,17 +310,21 @@ settingsRoutes.delete('/', async (c) => {
 
   const queryParams = c.req.query();
   const containerTag = queryParams.containerTag;
+  const { containerTags, response } = resolveRequestedContainerTags(c, containerTag);
+  if (response) {
+    return response;
+  }
 
   try {
     const result = await mutation<{ success: boolean; deleted: boolean }>('settings:remove', {
       userId,
-      containerTag,
+      containerTag: containerTags[0],
     });
 
     return c.json({
       success: true,
       message: result.deleted ? 'Settings deleted' : 'No settings found to delete',
-      containerTag: containerTag ?? null,
+      containerTag: containerTags[0] ?? null,
     });
   } catch (error) {
     return internalError(c, error, 'delete settings');

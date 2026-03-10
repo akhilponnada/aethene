@@ -16,7 +16,10 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
-import { resolveUserId } from '../middleware/auth.js';
+import {
+  resolveRequestedContainerTags,
+  resolveRequestedUserId,
+} from '../middleware/auth.js';
 
 const profile = new Hono<AppEnv>();
 
@@ -34,10 +37,13 @@ profile.get('/', async (c) => {
 
   const query = validateQuery(c, ProfileQuerySchema);
 
-  // SECURITY: Validate userId override to prevent IDOR attacks
-  const requestedUserId = query.userId || query.containerTag;
-  const userId = resolveUserId(c, requestedUserId);
-  const containerTag = query.containerTag;
+  const { containerTags, response } = resolveRequestedContainerTags(c, query.containerTag);
+  if (response) {
+    return response;
+  }
+
+  const containerTag = containerTags[0];
+  const userId = resolveRequestedUserId(c, query.userId, containerTag);
 
   try {
     const { ContextBuilder } = await import('../services/context-builder.js');

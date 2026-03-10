@@ -149,7 +149,8 @@ export default defineSchema({
     // API KEYS - Authentication
     // ============================================================================
     api_keys: defineTable({
-        key: v.string(),
+        key: v.optional(v.string()), // Legacy plaintext key storage (kept for compatibility only)
+        key_hash: v.optional(v.string()), // SHA-256 hash of the API key
         user_id: v.string(),
         name: v.optional(v.string()),
         rate_limit: v.optional(v.float64()), // Requests per hour
@@ -168,6 +169,7 @@ export default defineSchema({
         description: v.optional(v.string()), // User-provided description
     })
         .index("by_key", ["key"])
+        .index("by_key_hash", ["key_hash"])
         .index("by_user", ["user_id"])
         .index("by_parent", ["parent_key_id"]),
     // ============================================================================

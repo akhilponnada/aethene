@@ -25,7 +25,11 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
-import { resolveUserId, requirePermission } from '../middleware/auth.js';
+import {
+  requirePermission,
+  resolveRequestedContainerTags,
+  resolveRequestedUserId,
+} from '../middleware/auth.js';
 
 const content = new Hono<AppEnv>();
 
@@ -44,9 +48,15 @@ content.post('/', requirePermission('write'), async (c) => {
   // validateBody throws ValidationError if validation fails (caught by global handler)
   const body = await validateBody(c, IngestContentSchema);
 
-  // SECURITY: Validate userId override to prevent IDOR attacks
-  const requestedUserId = body.containerTag || body.userId;
-  const userId = resolveUserId(c, requestedUserId);
+  const { containerTags, response } = resolveRequestedContainerTags(c, body.containerTag, {
+    defaultToFirstAllowed: true,
+  });
+  if (response) {
+    return response;
+  }
+
+  const effectiveContainerTag = containerTags[0];
+  const userId = resolveRequestedUserId(c, body.userId, effectiveContainerTag);
 
   try {
     const { IngestService } = await import('../services/ingest-service.js');
@@ -60,7 +70,7 @@ content.post('/', requirePermission('write'), async (c) => {
       customId: body.customId,
       contentType: serviceContentType as 'text' | 'url' | 'file',
       metadata: body.metadata,
-      containerTag: body.containerTag,
+      containerTag: effectiveContainerTag,
     });
 
     return c.json({
@@ -210,7 +220,11 @@ content.get('/:id', async (c) => {
 content.patch('/:id', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
-  const userId = c.get('userId')!;
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
+    return authenticationError(c);
+  }
+  const userId: string = userIdRaw;
 
   const id = c.req.param('id')!;
   const body = await validateBody(c, UpdateContentSchema);
@@ -263,7 +277,11 @@ content.patch('/:id', requirePermission('write'), async (c) => {
 // =============================================================================
 
 content.delete('/:id', requirePermission('delete'), async (c) => {
-  const userId = c.get('userId')!;
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
+    return authenticationError(c);
+  }
+  const userId: string = userIdRaw;
 
   const id = c.req.param('id')!;
 

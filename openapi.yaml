@@ -48,8 +48,8 @@ info:
     url: https://aethene.com
     email: support@aethene.com
   license:
-    name: Proprietary
-    url: https://aethene.com/terms
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
   - url: https://api.aethene.com

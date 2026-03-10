@@ -17,7 +17,10 @@ import {
   internalError,
   validateBody,
 } from '../utils/errors.js';
-import { resolveUserId } from '../middleware/auth.js';
+import {
+  resolveRequestedContainerTags,
+  resolveUserId,
+} from '../middleware/auth.js';
 
 const search = new Hono<AppEnv>();
 
@@ -39,7 +42,11 @@ search.post('/', async (c) => {
   // containerTag is for filtering, NOT for userId resolution
   const requestedUserId = body.userId;
   const userId = resolveUserId(c, requestedUserId);
-  const containerTag = body.containerTag;
+  const { containerTags, response } = resolveRequestedContainerTags(c, body.containerTag);
+  if (response) {
+    return response;
+  }
+  const containerTag = containerTags[0];
 
   try {
     const { RecallService } = await import('../services/recall-service.js');
@@ -130,7 +137,11 @@ search.post('/recall', async (c) => {
 
   // Always use authUserId for recall, containerTag is for filtering
   const userId = authUserId;
-  const containerTag = body.containerTag;
+  const { containerTags, response } = resolveRequestedContainerTags(c, body.containerTag);
+  if (response) {
+    return response;
+  }
+  const containerTag = containerTags[0];
 
   try {
     const { RecallService } = await import('../services/recall-service.js');

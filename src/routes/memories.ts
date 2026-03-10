@@ -26,7 +26,12 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
-import { resolveUserId, requirePermission } from '../middleware/auth.js';
+import {
+  requirePermission,
+  resolveRequestedContainerTags,
+  resolveRequestedUserId,
+  resolveUserId,
+} from '../middleware/auth.js';
 
 const memories = new Hono<AppEnv>();
 
@@ -44,9 +49,15 @@ memories.post('/', requirePermission('write'), async (c) => {
 
   const body = await validateBody(c, CreateMemoriesSchema);
 
-  // SECURITY: Validate userId override to prevent IDOR attacks
-  const requestedUserId = (body as any).userId || (body as any).containerTag;
-  const userId = resolveUserId(c, requestedUserId);
+  const { containerTags, response } = resolveRequestedContainerTags(c, body.containerTag, {
+    defaultToFirstAllowed: true,
+  });
+  if (response) {
+    return response;
+  }
+
+  const effectiveContainerTag = containerTags[0];
+  const userId = resolveRequestedUserId(c, body.userId, effectiveContainerTag);
 
   try {
     const { extractAndSaveMemories } = await import('../services/memory-extractor.js');
@@ -60,7 +71,7 @@ memories.post('/', requirePermission('write'), async (c) => {
       const result = await extractAndSaveMemories(userId, memory.content.trim(), {
         forceIsCore: memory.isCore,
         metadata: memory.metadata || undefined,
-        containerTags: body.containerTag ? [body.containerTag] : undefined,
+        containerTags: effectiveContainerTag ? [effectiveContainerTag] : undefined,
       });
 
       // Collect all created memories
@@ -298,7 +309,13 @@ memories.get('/:id', async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
 
   try {
     const { getConvexClient } = await import('../database/convex.js');
@@ -343,7 +360,13 @@ memories.patch('/:id', requirePermission('write'), async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
   const body = await validateBody(c, UpdateMemorySchema);
   
 
@@ -400,7 +423,13 @@ memories.delete('/:id', requirePermission('delete'), async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
+  if (!id) {
+    return notFoundError(c, 'Memory');
+  }
 
   try {
     const { getConvexClient } = await import('../database/convex.js');
@@ -441,7 +470,7 @@ memories.get('/:id/history', async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   try {
     const { getVersionHistory } = await import('../services/memory-operations.js');
@@ -469,10 +498,11 @@ memories.get('/:id/history', async (c) => {
 // =============================================================================
 
 memories.post('/:id/restore', requirePermission('write'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
     return authenticationError(c);
   }
+  const userId: string = userIdRaw;
 
   const id = c.req.param('id')!;
 
@@ -502,10 +532,11 @@ memories.post('/:id/restore', requirePermission('write'), async (c) => {
 // =============================================================================
 
 memories.post('/:id/promote', requirePermission('write'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
     return authenticationError(c);
   }
+  const userId: string = userIdRaw;
 
   const id = c.req.param('id')!;
 
@@ -536,10 +567,11 @@ memories.post('/:id/promote', requirePermission('write'), async (c) => {
 // =============================================================================
 
 memories.post('/:id/demote', requirePermission('write'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
     return authenticationError(c);
   }
+  const userId: string = userIdRaw;
 
   const id = c.req.param('id')!;
 

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { encryptStoredSecret } from "./security";
 
 /**
  * Settings - User/container configuration (Supermemory v3 compatible)
@@ -11,6 +12,19 @@ import { mutation, query } from "./_generated/server";
  * - entityContext: Custom context per entity type (per containerTag)
  * - Connector settings: Google Drive, Notion, OneDrive custom OAuth
  */
+
+async function protectConnectorSecret(secret: string | undefined): Promise<string | undefined> {
+  if (secret === undefined) {
+    return undefined;
+  }
+
+  const trimmed = secret.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return encryptStoredSecret(trimmed);
+}
 
 // =============================================================================
 // GET SETTINGS
@@ -94,6 +108,9 @@ export const upsert = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const googleDriveClientSecret = await protectConnectorSecret(args.googleDriveClientSecret);
+    const notionClientSecret = await protectConnectorSecret(args.notionClientSecret);
+    const onedriveClientSecret = await protectConnectorSecret(args.onedriveClientSecret);
 
     // Check if settings already exist
     const existing = args.containerTag
@@ -140,7 +157,7 @@ export const upsert = mutation({
         updates.google_drive_client_id = args.googleDriveClientId;
       }
       if (args.googleDriveClientSecret !== undefined) {
-        updates.google_drive_client_secret = args.googleDriveClientSecret;
+        updates.google_drive_client_secret = googleDriveClientSecret;
       }
       // Notion
       if (args.notionCustomKeyEnabled !== undefined) {
@@ -150,7 +167,7 @@ export const upsert = mutation({
         updates.notion_client_id = args.notionClientId;
       }
       if (args.notionClientSecret !== undefined) {
-        updates.notion_client_secret = args.notionClientSecret;
+        updates.notion_client_secret = notionClientSecret;
       }
       // OneDrive
       if (args.onedriveCustomKeyEnabled !== undefined) {
@@ -160,7 +177,7 @@ export const upsert = mutation({
         updates.onedrive_client_id = args.onedriveClientId;
       }
       if (args.onedriveClientSecret !== undefined) {
-        updates.onedrive_client_secret = args.onedriveClientSecret;
+        updates.onedrive_client_secret = onedriveClientSecret;
       }
 
       await ctx.db.patch(existing._id, updates);
@@ -179,15 +196,15 @@ export const upsert = mutation({
         // Google Drive
         google_drive_custom_key_enabled: args.googleDriveCustomKeyEnabled,
         google_drive_client_id: args.googleDriveClientId,
-        google_drive_client_secret: args.googleDriveClientSecret,
+        google_drive_client_secret: googleDriveClientSecret,
         // Notion
         notion_custom_key_enabled: args.notionCustomKeyEnabled,
         notion_client_id: args.notionClientId,
-        notion_client_secret: args.notionClientSecret,
+        notion_client_secret: notionClientSecret,
         // OneDrive
         onedrive_custom_key_enabled: args.onedriveCustomKeyEnabled,
         onedrive_client_id: args.onedriveClientId,
-        onedrive_client_secret: args.onedriveClientSecret,
+        onedrive_client_secret: onedriveClientSecret,
         created_at: now,
         updated_at: now,
       });

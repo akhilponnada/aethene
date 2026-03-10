@@ -2,203 +2,188 @@
 
 # Aethene
 
-### **Open Source Memory API for AI Agents**
+**Open source memory infrastructure for AI agents**
+
+Store content, extract atomic memories, search semantically, and recall the right context when your agent needs it.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Convex](https://img.shields.io/badge/Convex-FF6B6B?style=for-the-badge&logo=convex&logoColor=white)](https://convex.dev/)
+[![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge)](https://hono.dev/)
+[![Convex](https://img.shields.io/badge/Convex-FF6B6B?style=for-the-badge)](https://convex.dev/)
 [![MIT License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)](./LICENSE)
 
-**Production-grade memory infrastructure. Self-hostable. Free.**
-
-[Quick Start](#-quick-start) · [Benchmarks](#-benchmarks) · [API Reference](#-api-reference) · [Self-Hosting](#-self-hosting)
-
----
+[Quick Start](#quick-start) · [API](#api-surface) · [Architecture](#architecture) · [Self-Hosting](#self-hosting) · [Contributing](#contributing)
 
 </div>
 
-## Benchmarks
-
-We tested Aethene against Supermemory (the leading commercial memory API) using identical data and evaluation criteria.
-
-<div align="center">
-
-### Personal Facts Recall (13 questions)
-
-```
-Aethene       ████████████████████████████████████████████████████  100%
-Supermemory   ████████████████████████████████████████████████████  100%
-```
-
-### LoCoMo Benchmark - Conversation 1 (15 questions)
-
-```
-Aethene       ████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   40%
-Supermemory   ███████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   47%
-```
-
-### LoCoMo Benchmark - Conversation 2 (15 questions)
-
-```
-Aethene       █████████████████████████████████████░░░░░░░░░░░░░░░   73%
-Supermemory   █████████████████████████████████████░░░░░░░░░░░░░░░   73%
-```
-
-| Test | Aethene | Supermemory | Result |
-|:-----|:-------:|:-----------:|:------:|
-| Simple Personal Facts | **100%** | 100% | Equal |
-| LoCoMo Conv 1 | 40% | 47% | -7% |
-| LoCoMo Conv 2 | **73%** | 73% | Equal |
-| **Overall** | **71%** | 73% | Equal |
-
-</div>
-
-**Bottom line:** Aethene matches Supermemory's performance while being completely open source and self-hostable.
-
 ---
 
-## Why Aethene?
+## Why Aethene
 
-| Feature | Aethene | Supermemory |
-|---------|:-------:|:-----------:|
-| Open Source | Yes | No |
-| Self-Hostable | Yes | No |
-| Price | **Free** | $99+/mo |
-| API Compatible | Yes | - |
-| Performance | 100% | 100% |
+Aethene is built for teams that want memory as infrastructure, not as a black box SaaS dependency.
 
----
+| Built for agents | Retrieval that understands context | Safe multi-tenant isolation |
+| --- | --- | --- |
+| Ingest conversations, notes, documents, and URLs. | Hybrid search combines vector similarity with reranking and recall logic. | `containerTag` scoping keeps memory separated per user, workspace, or tenant. |
+
+| Memory that evolves | Developer-friendly API | Fully self-hostable |
+| --- | --- | --- |
+| Versioning and contradiction handling keep newer facts current without losing history. | Clean REST endpoints, OpenAPI spec, and migration-friendly compatibility routes. | Run it yourself with Node.js, Convex, and Docker. |
+
+## Core Capabilities
+
+- Automatic memory extraction from raw content
+- EntityContext support for resolving `I`, `me`, and `my`
+- Container-tag filtering for multi-tenant isolation
+- Hybrid search and recall workflows
+- Memory versioning and contradiction detection
+- Entity graph and relationship extraction
+- File and URL ingestion
+
+## How It Works
+
+```text
+Raw content
+  -> ingest
+  -> chunk + extract memories
+  -> embed + index
+  -> search / recall / profile / relations
+```
 
 ## Quick Start
 
+### Prerequisites
+
+- Node.js 18+
+- A Convex deployment
+- A Gemini API key for embeddings
+
+### Setup
+
 ```bash
-# Clone
 git clone https://github.com/akhilponnada/aethene.git
 cd aethene
-
-# Install
 npm install
-
-# Configure
 cp .env.example .env
-# Edit .env with your Convex URL and Gemini API key
+```
 
-# Run
+Fill in the required values in `.env`:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `CONVEX_URL` | Yes | Convex deployment URL |
+| `GEMINI_API_KEY` | Yes | Embeddings and memory extraction support |
+| `OPENAI_API_KEY` | No | Optional OpenAI-backed extraction path |
+| `EXTRACTION_MODEL` | No | Extraction model override |
+| `API_KEYS` | No | Comma-separated dev API keys |
+| `SETTINGS_ENCRYPTION_KEY` | No | Required if you want to persist connector secrets securely |
+| `PORT` | No | API server port, default `3006` |
+
+### Run
+
+```bash
 npm run server
 ```
 
-### Store a memory
+The API will start on `http://localhost:3006`.
+
+## Example Flow
+
+### 1. Ingest a document
 
 ```bash
 curl -X POST http://localhost:3006/v3/documents \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "Sarah works at Google as a software engineer",
+    "content": "Sarah works at Google as a software engineer and has a dog named Luna.",
     "containerTag": "user_123"
   }'
 ```
 
-### Search memories
+### 2. Search what the system remembered
 
 ```bash
 curl -X POST http://localhost:3006/v1/search \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Where does Sarah work?",
+    "query": "What pet does Sarah have?",
     "containerTag": "user_123",
-    "mode": "memories"
+    "mode": "memories",
+    "limit": 5
   }'
-
-# Returns: "Sarah works at Google as a software engineer"
 ```
 
----
+### 3. Typical extracted memories
 
-## Features
-
-### Automatic Memory Extraction
-
-```
-Input: "I'm Sarah, I work at Google and have a dog named Luna"
-
-Extracted Memories:
-  - Sarah works at Google
-  - Sarah has a dog named Luna
-  - Luna is Sarah's dog
+```text
+- Sarah works at Google
+- Sarah is a software engineer
+- Sarah has a dog named Luna
+- Luna is Sarah's dog
 ```
 
-### Semantic Search
+## API Surface
 
-```
-Query: "What pet does Sarah have?"
+The full spec lives in [`openapi.yaml`](./openapi.yaml).
 
-Results:
-  1. Sarah has a dog named Luna (0.94)
-  2. Luna is Sarah's dog (0.89)
-```
+### Core endpoints
 
-### Container Isolation
+| Area | Endpoint | Description |
+| --- | --- | --- |
+| Health | `GET /health` | Basic health check |
+| Documents | `POST /v3/documents` | Ingest text or URL content |
+| Documents | `POST /v3/documents/file` | Upload and process a file |
+| Search | `POST /v1/search` | Semantic search over memories/documents |
+| Recall | `POST /v1/recall` | Context assembly for agent use |
+| Memories | `GET /v1/memories` | List stored memories |
+| Memories | `PATCH /v1/memories/:id` | Update a memory |
+| Profile | `GET /v1/profile` | Build a profile from static and dynamic memories |
+| Relations | `GET /v1/relations` | Inspect relationships and graph data |
+| Settings | `GET/PATCH /v1/settings` | User and container settings |
+| Auth | `POST /v1/auth/keys` | Create scoped API keys |
 
-```javascript
-// Each user gets isolated memory space
-await aethene.add({
-  content: "User prefers dark mode",
-  containerTag: "user_123"  // Only accessible with this tag
-});
-```
-
-### Memory Versioning
-
-```
-Timeline:
-  v1: Sarah has 500 followers (2024-01-15) [superseded]
-  v2: Sarah has 10K followers (2024-06-20) [current]
-```
-
----
-
-## API Reference
-
-### Documents API (v3)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v3/documents` | POST | Ingest content, auto-extract memories |
+### Request shape
 
 ```json
 {
-  "content": "Your text content",
-  "containerTag": "optional_isolation_tag",
-  "entityContext": "Optional context for 'I/me' resolution"
+  "content": "Your source content",
+  "containerTag": "user_123",
+  "entityContext": "Alice is the user speaking in first person"
 }
 ```
 
-### Search API (v1)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/search` | POST | Semantic search across memories |
+### Search shape
 
 ```json
 {
-  "query": "Your search query",
-  "containerTag": "optional_filter",
+  "query": "Where does Sarah work?",
+  "containerTag": "user_123",
   "limit": 10,
   "mode": "memories"
 }
 ```
 
-### Memory Operations
+## Architecture
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/memories` | GET | List all memories |
-| `/v1/memories/:id` | GET | Get specific memory |
-| `/v1/memories/:id` | PATCH | Update memory |
-| `/v1/memories/:id` | DELETE | Forget memory |
+```text
+Clients
+  -> Hono API routes
+  -> auth + rate limiting
+  -> ingest / extraction / recall services
+  -> Convex for data, indexing, and vectors
+  -> Gemini / LLM providers for embeddings and extraction
+```
 
----
+### Important files
+
+| File | Role |
+| --- | --- |
+| `src/services/memory-extractor.ts` | Core memory extraction logic |
+| `src/services/recall-service.ts` | Search, filtering, reranking, and recall |
+| `convex/vectorSearch.ts` | Vector search and container-tag filtering |
+| `src/routes/search.ts` | Search API endpoints |
+| `src/routes/documents.ts` | Document ingestion and file upload |
 
 ## Self-Hosting
 
@@ -211,109 +196,59 @@ docker-compose up -d
 ### Manual
 
 ```bash
-# 1. Set up Convex
 npx convex dev
-
-# 2. Configure environment
+npm install
 cp .env.example .env
-# Add your CONVEX_URL and GEMINI_API_KEY
-
-# 3. Run server
 npm run server
 ```
 
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|:--------:|-------------|
-| `CONVEX_URL` | Yes | Your Convex deployment URL |
-| `GEMINI_API_KEY` | Yes | Google Gemini API key for embeddings |
-| `OPENAI_API_KEY` | No | For GPT-based extraction (optional) |
-| `PORT` | No | Server port (default: 3006) |
-| `API_KEYS` | No | Comma-separated API keys |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Aethene API                          │
-├─────────────────────────────────────────────────────────┤
-│  Auth        Rate Limiter       REST Routes             │
-├─────────────────────────────────────────────────────────┤
-│  Memory Extractor    Recall Service    Entity Graph     │
-│     (LLM)              (Hybrid)         (Relations)     │
-├─────────────────────────────────────────────────────────┤
-│        Convex                    Gemini                 │
-│   (DB + Vectors)            (Embeddings)                │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## Example: AI Chat with Memory
-
-```typescript
-async function chat(userMessage: string, userId: string) {
-  // 1. Recall relevant context
-  const { results } = await fetch("http://localhost:3006/v1/search", {
-    method: "POST",
-    headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: userMessage,
-      containerTag: userId,
-      limit: 5,
-      mode: "memories"
-    }),
-  }).then(r => r.json());
-
-  const context = results.map(r => r.memory).join("\n");
-
-  // 2. Generate response with memory
-  const response = await llm.generate({
-    system: `You remember: ${context}`,
-    user: userMessage
-  });
-
-  // 3. Store this conversation
-  await fetch("http://localhost:3006/v3/documents", {
-    method: "POST",
-    headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content: `User: ${userMessage}\nAssistant: ${response}`,
-      containerTag: userId,
-    }),
-  });
-
-  return response;
-}
-```
-
----
-
-## Testing
+## Development
 
 ```bash
-# Run comparison test
-npx tsx tests/compare-test.ts
-
-# Run LoCoMo benchmark
-npx tsx tests/locomo-vs-sm.ts
+npm run typecheck
+npm run test:run
+npm run test:integration
+npm run build
 ```
 
----
+### Useful scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run server` | Start the API locally |
+| `npm run server:dev` | Start with file watching |
+| `npm run typecheck` | Run TypeScript checks |
+| `npm run test:run` | Run the test suite |
+| `npm run test:integration` | Run integration tests |
+| `npm run test:load` | Run load testing script |
+| `npm run build` | Build `dist/` |
+| `npm run audit` | Dependency audit |
+
+## Use Cases
+
+- Long-lived assistant memory
+- Agent copilots with user-specific context
+- Semantic profile building
+- Cross-session recall for chat products
+- Memory-backed search across ingested content
+- Multi-tenant AI applications
+
+## Contributing
+
+Issues and pull requests are welcome. If you are contributing core behavior, the best places to start are the ingest, extraction, recall, and vector-search layers listed above.
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE)
+MIT. See [LICENSE](./LICENSE).
 
 ---
 
 <div align="center">
 
-**Open source memory for AI. Built to match the best.**
+**Aethene is open source memory infrastructure for AI.**
 
 [GitHub](https://github.com/akhilponnada/aethene) · [Issues](https://github.com/akhilponnada/aethene/issues)
+
+Made with love in Edinburgh.
 
 </div>

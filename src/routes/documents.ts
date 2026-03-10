@@ -21,7 +21,10 @@ import {
   internalError,
   validationError,
 } from '../utils/errors.js';
-import { requirePermission } from '../middleware/auth.js';
+import {
+  requirePermission,
+  resolveRequestedContainerTags,
+} from '../middleware/auth.js';
 
 const documents = new Hono<AppEnv>();
 
@@ -105,15 +108,21 @@ documents.post('/', requirePermission('write'), async (c) => {
   try {
     const { ingestContent } = await import('../services/ingest-service.js');
 
-    // Handle containerTag vs containerTags (Supermemory accepts both)
-    const containerTags = body.containerTags || (body.containerTag ? [body.containerTag] : undefined);
+    const { containerTags, response } = resolveRequestedContainerTags(
+      c,
+      body.containerTags ?? body.containerTag,
+      { defaultToFirstAllowed: true }
+    );
+    if (response) {
+      return response;
+    }
 
     // Use ingestContent which triggers async memory extraction
     const result = await ingestContent(userId, body.content, {
       contentType: body.url ? 'url' : 'text',
       customId: body.customId,
       metadata: body.metadata,
-      containerTags,
+      containerTags: containerTags.length > 0 ? containerTags : undefined,
       entityContext: body.entityContext,
     });
 
@@ -160,8 +169,10 @@ documents.post('/file', requirePermission('write'), async (c) => {
     }
 
     // Get optional parameters
-    const containerTag = formData.get('containerTag')?.toString() ||
-                         formData.get('containerTags')?.toString();
+    const requestedContainerTags =
+      formData.get('containerTags')?.toString() ??
+      formData.get('containerTag')?.toString() ??
+      null;
     const customId = formData.get('customId')?.toString();
     const entityContext = formData.get('entityContext')?.toString();
 
@@ -176,11 +187,18 @@ documents.post('/file', requirePermission('write'), async (c) => {
       }
     }
 
+    const { containerTags, response } = resolveRequestedContainerTags(c, requestedContainerTags, {
+      defaultToFirstAllowed: true,
+    });
+    if (response) {
+      return response;
+    }
+
     // Import and use file processing service
     const { FileProcessingService } = await import('../services/file-processing-service.js');
 
     const result = await FileProcessingService.processFileUpload(userId, file, {
-      containerTag,
+      containerTag: containerTags[0],
       customId,
       metadata,
       entityContext,
@@ -360,7 +378,13 @@ documents.get('/:id', async (c) => {
     return authenticationError(c);
   }
 
-  const docId = c.req.param('id');
+  const docId = c.req.param('id')!;
+  if (!docId) {
+    return notFoundError(c, 'Document');
+  }
+  if (!docId) {
+    return notFoundError(c, 'Document');
+  }
 
   try {
     const { getDocument, getDocumentChunks } = await import('../services/document-operations.js');
@@ -422,7 +446,11 @@ documents.get('/:id', async (c) => {
 // =============================================================================
 
 documents.patch('/:id', requirePermission('write'), async (c) => {
-  const userId = c.get('userId')!;
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
+    return authenticationError(c);
+  }
+  const userId: string = userIdRaw;
 
   const docId = c.req.param('id')!;
 
@@ -522,7 +550,11 @@ documents.delete('/bulk', requirePermission('delete'), async (c) => {
 // =============================================================================
 
 documents.delete('/:id', requirePermission('delete'), async (c) => {
-  const userId = c.get('userId')!;
+  const userIdRaw = c.get('userId');
+  if (!userIdRaw) {
+    return authenticationError(c);
+  }
+  const userId: string = userIdRaw;
 
   const docId = c.req.param('id')!;
 
