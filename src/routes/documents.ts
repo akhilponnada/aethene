@@ -21,6 +21,7 @@ import {
   internalError,
   validationError,
 } from '../utils/errors.js';
+import { requirePermission } from '../middleware/auth.js';
 
 const documents = new Hono<AppEnv>();
 
@@ -66,7 +67,7 @@ const CreateDocumentV3Schema = z.object({
 // POST /v3/documents - Create document with text content (Supermemory compatible)
 // =============================================================================
 
-documents.post('/', async (c) => {
+documents.post('/', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -140,7 +141,7 @@ documents.post('/', async (c) => {
 // Supermemory-compatible file upload endpoint
 // =============================================================================
 
-documents.post('/file', async (c) => {
+documents.post('/file', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -420,7 +421,7 @@ documents.get('/:id', async (c) => {
 // PATCH /v3/documents/:id - Update document
 // =============================================================================
 
-documents.patch('/:id', async (c) => {
+documents.patch('/:id', requirePermission('write'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -482,7 +483,7 @@ documents.patch('/:id', async (c) => {
 // IMPORTANT: Must be defined BEFORE /:id to avoid route conflicts
 // =============================================================================
 
-documents.delete('/bulk', async (c) => {
+documents.delete('/bulk', requirePermission('delete'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -523,7 +524,7 @@ documents.delete('/bulk', async (c) => {
 // DELETE /v3/documents/:id - Delete document
 // =============================================================================
 
-documents.delete('/:id', async (c) => {
+documents.delete('/:id', requirePermission('delete'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);

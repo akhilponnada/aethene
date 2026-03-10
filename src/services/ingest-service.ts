@@ -174,7 +174,9 @@ async function processDocumentAsync(
     const shouldFetch = contentType === 'url' || UrlFetchService.shouldAutoFetch(content, contentType);
 
     if (shouldFetch) {
-      console.log(`[Ingest] Fetching URL content for ${externalId}: ${content.substring(0, 100)}...`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[Ingest] Fetching URL content for ${externalId}: ${content.substring(0, 100)}...`);
+      }
 
       const fetchResult = await UrlFetchService.fetchUrl(content.trim());
 

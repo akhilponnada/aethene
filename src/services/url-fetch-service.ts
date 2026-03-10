@@ -430,16 +430,82 @@ export async function fetchUrl(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
+    // Manual redirect handling to prevent SSRF via redirect
+    const MAX_REDIRECTS = 10;
+    let currentUrl = url;
+    let response: Response;
+    let redirectCount = 0;
+
+    while (true) {
+      response = await fetch(currentUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': userAgent,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+        },
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+
+      // Check if this is a redirect
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          break; // No location header, treat as final response
+        }
+
+        // Resolve relative URLs
+        const redirectUrl = new URL(location, currentUrl).toString();
+
+        // SSRF protection: validate redirect destination
+        try {
+          const parsedRedirect = new URL(redirectUrl);
+          if (isBlockedHost(parsedRedirect.hostname)) {
+            clearTimeout(timeoutId);
+            return {
+              success: false,
+              content: '',
+              contentType: 'unknown',
+              url: currentUrl,
+              originalUrl,
+              metadata: { fetchedAt: startTime },
+              error: 'Redirect to internal network is not allowed',
+            };
+          }
+        } catch {
+          clearTimeout(timeoutId);
+          return {
+            success: false,
+            content: '',
+            contentType: 'unknown',
+            url: currentUrl,
+            originalUrl,
+            metadata: { fetchedAt: startTime },
+            error: 'Invalid redirect URL',
+          };
+        }
+
+        redirectCount++;
+        if (redirectCount > MAX_REDIRECTS) {
+          clearTimeout(timeoutId);
+          return {
+            success: false,
+            content: '',
+            contentType: 'unknown',
+            url: currentUrl,
+            originalUrl,
+            metadata: { fetchedAt: startTime },
+            error: 'Too many redirects',
+          };
+        }
+
+        currentUrl = redirectUrl;
+        continue;
+      }
+
+      break; // Not a redirect, we have our final response
+    }
 
     clearTimeout(timeoutId);
 

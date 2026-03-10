@@ -21,7 +21,7 @@ import { initializeDb } from './database/db.js';
 
 // Middleware
 import { apiKeyAuth } from './middleware/auth.js';
-import { globalRateLimiter, cleanupRateLimitRecords } from './middleware/rate-limiter.js';
+import { globalRateLimiter, cleanupRateLimitRecords, deepHealthRateLimiter } from './middleware/rate-limiter.js';
 
 // v1 Routes
 import memoriesRoutes from './routes/memories.js';
@@ -133,10 +133,11 @@ app.get('/health', (c) => {
 });
 
 // =============================================================================
-// DEEP HEALTH CHECK (Public) - Checks all dependencies
+// DEEP HEALTH CHECK (Rate-limited) - Checks all dependencies
+// Rate-limited to prevent cost-amplification attacks (triggers live API calls)
 // =============================================================================
 
-app.get('/health/deep', async (c) => {
+app.get('/health/deep', deepHealthRateLimiter, async (c) => {
   const checks: Record<string, { status: string; latencyMs?: number; error?: string }> = {};
   const startTime = Date.now();
 

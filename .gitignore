@@ -57,3 +57,20 @@ tests/longmemeval-*.ts
 tests/deep-*.ts
 tests/full-*.ts
 documentation.md
+
+# Non-automated test scripts (benchmarks, comparisons, debug scripts)
+tests/locomo-*.ts
+tests/compare-*.ts
+tests/reverse-engineer-test.ts
+tests/sm-*.ts
+tests/quick-verify.ts
+tests/load/load-test.ts
+tests/athlete-test.ts
+tests/chef-test.ts
+tests/work-test.ts
+tests/movies-test.ts
+tests/comprehensive-test.ts
+tests/embedding-score-*.ts
+convex/testQuery.ts
+CLAUDE.md
+AGENTS.md

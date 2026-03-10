@@ -1938,13 +1938,15 @@ export async function extractMemories(
   const referenceDate = contextDate || new Date();
   const dateConvertedContent = convertRelativeDates(sanitizedContent, referenceDate);
 
-  // Log conversion details for debugging
-  if (dateConvertedContent !== sanitizedContent) {
-    console.log(`   📅 Date conversion applied. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
-    console.log(`   📅 Original: ${sanitizedContent.substring(0, 200)}...`);
-    console.log(`   📅 Converted: ${dateConvertedContent.substring(0, 200)}...`);
-  } else {
-    console.log(`   📅 No relative dates found to convert. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
+  // Log conversion details for debugging (only in non-production to avoid logging user content)
+  if (process.env.NODE_ENV !== 'production') {
+    if (dateConvertedContent !== sanitizedContent) {
+      console.log(`   📅 Date conversion applied. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
+      console.log(`   📅 Original: ${sanitizedContent.substring(0, 200)}...`);
+      console.log(`   📅 Converted: ${dateConvertedContent.substring(0, 200)}...`);
+    } else {
+      console.log(`   📅 No relative dates found to convert. Reference date: ${referenceDate.toISOString()}${contextDate ? ' (from text)' : ' (current)'}`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2237,7 +2239,9 @@ Use NAME + possessive ('s) for events, or NAME + verb for facts.`;
     // ═══════════════════════════════════════════════════════════════════════════
     memories = reclassifyStaticDynamic(memories);
 
-    console.log(`   📝 Final extraction: ${memories.length} memories:`, memories.map(m => m.content));
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`   📝 Final extraction: ${memories.length} memories:`, memories.map(m => m.content));
+    }
 
     // Limit count
     memories = memories.slice(0, MAX_MEMORIES_PER_EXTRACTION);

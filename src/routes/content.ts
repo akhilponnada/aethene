@@ -25,7 +25,7 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
-import { resolveUserId } from '../middleware/auth.js';
+import { resolveUserId, requirePermission } from '../middleware/auth.js';
 
 const content = new Hono<AppEnv>();
 
@@ -33,7 +33,7 @@ const content = new Hono<AppEnv>();
 // POST /v1/content - Ingest content (async extraction)
 // =============================================================================
 
-content.post('/', async (c) => {
+content.post('/', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const authUserId = c.get('userId');
@@ -207,7 +207,7 @@ content.get('/:id', async (c) => {
 // PATCH /v1/content/:id - Update content (re-queues for processing)
 // =============================================================================
 
-content.patch('/:id', async (c) => {
+content.patch('/:id', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -265,7 +265,7 @@ content.patch('/:id', async (c) => {
 // DELETE /v1/content/:id - Delete content
 // =============================================================================
 
-content.delete('/:id', async (c) => {
+content.delete('/:id', requirePermission('delete'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -298,7 +298,7 @@ content.delete('/:id', async (c) => {
 // DELETE /v1/content/bulk - Bulk delete content
 // =============================================================================
 
-content.delete('/bulk', async (c) => {
+content.delete('/bulk', requirePermission('delete'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');

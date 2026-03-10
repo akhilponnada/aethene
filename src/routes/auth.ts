@@ -103,9 +103,10 @@ auth.post('/keys', async (c) => {
       ? Date.now() + (body.expiresIn * 1000)
       : undefined;
 
-    // SECURITY FIX: Scoped keys get their own userId based on containerTags
-    // This ensures complete data isolation between different scoped keys
-    const scopedUserId = `scoped-${body.containerTags.sort().join('-')}`;
+    // SECURITY FIX: Scoped keys get their own userId based on parent + containerTags
+    // This ensures complete data isolation between different parent accounts
+    // even if they use the same containerTags
+    const scopedUserId = `scoped-${userId}-${body.containerTags.sort().join('-')}`;
 
     // Create the scoped key in database
     const keyId = await mutateConvex<string>('apiKeys:createScopedKey', {

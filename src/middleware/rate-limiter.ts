@@ -132,6 +132,16 @@ export const strictRateLimiter = rateLimiter({
   message: 'Rate limit exceeded for this operation.',
 });
 
+/**
+ * Deep health check rate limiter: 5 requests per minute per IP
+ * Prevents cost-amplification attacks on /health/deep which calls external APIs
+ */
+export const deepHealthRateLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 5,
+  message: 'Deep health check rate limit exceeded. This endpoint is rate-limited to prevent abuse.',
+});
+
 // =============================================================================
 // PER-KEY RATE LIMITER (For scoped API keys)
 // =============================================================================

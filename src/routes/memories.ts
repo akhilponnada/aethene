@@ -26,7 +26,7 @@ import {
   validateBody,
   validateQuery,
 } from '../utils/errors.js';
-import { resolveUserId } from '../middleware/auth.js';
+import { resolveUserId, requirePermission } from '../middleware/auth.js';
 
 const memories = new Hono<AppEnv>();
 
@@ -34,7 +34,7 @@ const memories = new Hono<AppEnv>();
 // POST /v1/memories - Create memories directly (batch)
 // =============================================================================
 
-memories.post('/', async (c) => {
+memories.post('/', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const authUserId = c.get('userId');
@@ -335,7 +335,7 @@ memories.get('/:id', async (c) => {
 // PATCH /v1/memories/:id - Update memory (creates new version)
 // =============================================================================
 
-memories.patch('/:id', async (c) => {
+memories.patch('/:id', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -394,7 +394,7 @@ memories.patch('/:id', async (c) => {
 // DELETE /v1/memories/:id - Soft delete (forget)
 // =============================================================================
 
-memories.delete('/:id', async (c) => {
+memories.delete('/:id', requirePermission('delete'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -468,7 +468,7 @@ memories.get('/:id/history', async (c) => {
 // POST /v1/memories/:id/restore - Restore forgotten memory
 // =============================================================================
 
-memories.post('/:id/restore', async (c) => {
+memories.post('/:id/restore', requirePermission('write'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -501,7 +501,7 @@ memories.post('/:id/restore', async (c) => {
 // POST /v1/memories/:id/promote - Promote to core memory
 // =============================================================================
 
-memories.post('/:id/promote', async (c) => {
+memories.post('/:id/promote', requirePermission('write'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -535,7 +535,7 @@ memories.post('/:id/promote', async (c) => {
 // POST /v1/memories/:id/demote - Demote from core memory
 // =============================================================================
 
-memories.post('/:id/demote', async (c) => {
+memories.post('/:id/demote', requirePermission('write'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
@@ -569,7 +569,7 @@ memories.post('/:id/demote', async (c) => {
 // POST /v1/memories/bulk/forget - Batch forget memories
 // =============================================================================
 
-memories.post('/bulk/forget', async (c) => {
+memories.post('/bulk/forget', requirePermission('delete'), async (c) => {
   const startTime = Date.now();
 
   const userId = c.get('userId');
@@ -601,7 +601,7 @@ memories.post('/bulk/forget', async (c) => {
 // POST /v1/memories/:id/set-expiry - Set memory expiration
 // =============================================================================
 
-memories.post('/:id/set-expiry', async (c) => {
+memories.post('/:id/set-expiry', requirePermission('write'), async (c) => {
   const userId = c.get('userId');
   if (!userId) {
     return authenticationError(c);
