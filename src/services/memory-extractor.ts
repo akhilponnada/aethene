@@ -1986,18 +1986,24 @@ IMPORTANT - EXTRACT ALL PERSONAL RELATIONSHIPS:
 9. PET RELATIONSHIPS: Extract "User has a cat/dog named [Name]" or "User's pet is named [Name]"
 10. PROFESSIONAL RELATIONSHIPS: Extract "[Name] works at [Company]" when mentioned about someone else
 11. CHILDREN/PARENTS: Extract "User's son/daughter/mother/father is [Name]"
-12. For third-party info: If someone says "My boyfriend Mike works at Google", extract BOTH:
+12. For third-party info: If someone says "My boyfriend Mike works at Google", extract ALL THREE:
     - "User's boyfriend is Mike"
     - "Mike works at Google"
+    - "User's boyfriend works at Google" (LINKED FACT for searchability)
 
-CRITICAL - ATOMIC FACT EXTRACTION:
-13. ATOMIZE FAMILY INFO: For EACH family member, extract SEPARATE facts for: relationship, name, age, occupation, traits
+CRITICAL - ATOMIC FACT EXTRACTION WITH LINKED FACTS:
+13. ATOMIZE FAMILY INFO but ALSO create LINKED FACTS for occupations/locations:
     - WRONG: "User has a wife Jennifer who is a pediatrician and a 7-year-old son Marcus"
-    - RIGHT: Extract as SEPARATE facts:
+    - RIGHT: Extract SEPARATE facts PLUS linked facts:
       * "User's wife is Jennifer"
       * "Jennifer is a pediatrician"
+      * "User's wife is a pediatrician" (LINKED - for "what does User's wife do?")
       * "User's son is Marcus"
       * "Marcus is 7 years old"
+    - For "Alex's sister Emily works at Google", extract:
+      * "Alex's sister is Emily"
+      * "Emily works at Google"
+      * "Alex's sister works at Google" (LINKED - critical for retrieval!)
 14. ATOMIZE HOBBIES: For EACH hobby/activity, extract SEPARATE facts for: activity, frequency, duration, skill level
     - WRONG: "User plays tennis every Saturday and has been learning piano for 2 years"
     - RIGHT: Extract as SEPARATE facts:
