@@ -474,7 +474,7 @@ memories.post('/:id/restore', requirePermission('write'), async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   try {
     const { restoreMemory } = await import('../services/memory-operations.js');
@@ -507,7 +507,7 @@ memories.post('/:id/promote', requirePermission('write'), async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   try {
     const { promoteToCore } = await import('../services/memory-operations.js');
@@ -541,7 +541,7 @@ memories.post('/:id/demote', requirePermission('write'), async (c) => {
     return authenticationError(c);
   }
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   try {
     const { demoteFromCore } = await import('../services/memory-operations.js');

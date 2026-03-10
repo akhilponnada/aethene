@@ -422,12 +422,9 @@ documents.get('/:id', async (c) => {
 // =============================================================================
 
 documents.patch('/:id', requirePermission('write'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
+  const userId = c.get('userId')!;
 
-  const docId = c.req.param('id');
+  const docId = c.req.param('id')!;
 
   let body: z.infer<typeof UpdateDocumentV3Schema>;
   try {
@@ -525,12 +522,9 @@ documents.delete('/bulk', requirePermission('delete'), async (c) => {
 // =============================================================================
 
 documents.delete('/:id', requirePermission('delete'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
+  const userId = c.get('userId')!;
 
-  const docId = c.req.param('id');
+  const docId = c.req.param('id')!;
 
   try {
     const { deleteDocument } = await import('../services/document-operations.js');

@@ -210,12 +210,9 @@ content.get('/:id', async (c) => {
 content.patch('/:id', requirePermission('write'), async (c) => {
   const startTime = Date.now();
 
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
+  const userId = c.get('userId')!;
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await validateBody(c, UpdateContentSchema);
 
   try {
@@ -266,12 +263,9 @@ content.patch('/:id', requirePermission('write'), async (c) => {
 // =============================================================================
 
 content.delete('/:id', requirePermission('delete'), async (c) => {
-  const userId = c.get('userId');
-  if (!userId) {
-    return authenticationError(c);
-  }
+  const userId = c.get('userId')!;
 
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   try {
     const { IngestService } = await import('../services/ingest-service.js');
