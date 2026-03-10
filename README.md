@@ -60,7 +60,7 @@ Raw content
 ### Setup
 
 ```bash
-git clone https://github.com/akhilponnada/aethene.git
+git clone https://github.com/Nuro-Labs/aethene.git
 cd aethene
 npm install
 cp .env.example .env
@@ -247,7 +247,7 @@ MIT. See [LICENSE](./LICENSE).
 
 **Aethene is open source memory infrastructure for AI.**
 
-[GitHub](https://github.com/akhilponnada/aethene) · [Issues](https://github.com/akhilponnada/aethene/issues)
+[GitHub](https://github.com/Nuro-Labs/aethene) · [Issues](https://github.com/Nuro-Labs/aethene/issues)
 
 Made with love in Edinburgh.
 
